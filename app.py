@@ -671,7 +671,7 @@ def forgot_password():
             return redirect(url_for("login"))
         except Exception as e:
             # Avoid leaking account existence while still surfacing mail configuration problems.
-            flash("We could not send the recovery email. Please contact the clinic administrator." if "SMTP" not in str(e) else str(e), "error")
+            flash(str(e), "error")
     return render_template("forgot.html")
 
 
