@@ -1,5 +1,5 @@
-"""
-Holy Bethel Dental Clinic â€” Web application
+﻿"""
+Holy Bethel Dental Clinic Ã¢â‚¬â€ Web application
 Runs 24/7 on a free/cheap host (Render, Railway, etc.)
 """
 from datetime import datetime, timedelta
@@ -57,6 +57,7 @@ from telegram_util import (
     build_daily_report,
     build_earning_message,
     try_send_for_doctor,
+    send_telegram_document,
 )
 
 # Optional newer telegram helpers (monthly / delete) if present
@@ -348,7 +349,7 @@ def patient_new():
             session.get("doctor_name", ""),
             "create",
             entity_id=new_id,
-            detail=f"{patient} Â· {procedure} Â· {fee:,.2f}",
+            detail=f"{patient} Ã‚Â· {procedure} Ã‚Â· {fee:,.2f}",
         )
         try:
             msg = build_earning_message(
@@ -359,7 +360,7 @@ def patient_new():
         ok, detail = try_send_for_doctor(doctor_id, msg)
         if not ok:
             queue_telegram(doctor_id, msg)
-        flash(f"Saved {patient}" + (" Â· Telegram sent" if ok else " Â· Telegram queued"), "success")
+        flash(f"Saved {patient}" + (" Ã‚Â· Telegram sent" if ok else " Ã‚Â· Telegram queued"), "success")
         return redirect(url_for("patients"))
 
     return render_template(
@@ -408,7 +409,7 @@ def patient_edit(pid):
             )
         log_audit(
             doctor_id, session.get("doctor_name", ""), "update",
-            entity_id=pid, detail=f"{patient} Â· {procedure} Â· {fee:,.2f}",
+            entity_id=pid, detail=f"{patient} Ã‚Â· {procedure} Ã‚Â· {fee:,.2f}",
         )
         try:
             msg = build_earning_message(
@@ -504,8 +505,8 @@ h2{{color:#55616c;margin:0 0 8px;border-bottom:3px solid #b98a3e;padding-bottom:
 .total{{background:linear-gradient(135deg,#b98a3e,#9c7433);color:#fff;padding:14px;border-radius:10px;text-align:center;margin-top:16px}}
 @media print{{button{{display:none}}}}
 </style></head><body><div class="card">
-<h2>ðŸ¦· {CLINIC_NAME}</h2>
-<p>Treatment Receipt Â· {session.get('doctor_name','')}</p>
+<h2>Ã°Å¸Â¦Â· {CLINIC_NAME}</h2>
+<p>Treatment Receipt Ã‚Â· {session.get('doctor_name','')}</p>
 <div class="row"><span>Receipt</span><strong>#REC-{r['id']:05d}</strong></div>
 <div class="row"><span>Gregorian</span><strong>{r['greg_date']}</strong></div>
 <div class="row"><span>Ethiopian</span><strong>{r['eth_date']}</strong></div>
@@ -732,7 +733,7 @@ def _send_password_reset_email(recipient, name, token):
         raise RuntimeError("SMTP_HOST, SMTP_FROM and APP_BASE_URL must be configured for email recovery.")
     link = f"{base_url}{url_for('reset_password')}?token={token}"
     msg = EmailMessage()
-    msg["Subject"] = f"{CLINIC_NAME} â€” password reset"
+    msg["Subject"] = f"{CLINIC_NAME} Ã¢â‚¬â€ password reset"
     msg["From"] = sender
     msg["To"] = recipient
     msg.set_content(f"Hello {name},\n\nUse the link below to reset your {CLINIC_NAME} password. This link expires in 30 minutes and can only be used once.\n\n{link}\n\nIf you did not request this, you can ignore this email.\n")
@@ -898,24 +899,150 @@ def _cleanup_google_backups():
 
 
 def _run_automatic_backup():
+    """Create local backup, upload to Google Drive, and send to Telegram."""
     if not os.path.isfile(DB_FILE):
         return False, "Database file not found."
+
     try:
+        # 1. Create a consistent SQLite snapshot
         path = _create_backup_snapshot()
+
+        # 2. Clean up old local backups
         local_removed = _cleanup_local_backups()
-        drive_ok = False
+
+        # 3. Google Drive backup
         drive_msg = "Google Drive not connected."
+
         try:
             import google_drive as gdrive
+
             if gdrive.is_connected():
                 drive_ok, drive_msg = gdrive.upload_file(path)
                 _cleanup_google_backups()
+
         except Exception as e:
-            drive_msg = str(e)
-        return True, f"Backup created: {os.path.basename(path)}. Local old backups removed: {local_removed}. {drive_msg}"
+            drive_msg = f"Google Drive error: {e}"
+
+        # 4. Telegram database backup
+        telegram_msg = "Telegram backup not configured."
+
+        try:
+            with get_conn() as conn:
+                doctors = conn.execute(
+                    """
+                    SELECT id, name, telegram_bot_token, telegram_chat_id
+                    FROM doctors
+                    WHERE telegram_enabled=1
+                      AND telegram_bot_token!=''
+                      AND telegram_chat_id!=''
+                    """
+                ).fetchall()
+
+            if doctors:
+                sent_count = 0
+                failed_count = 0
+                last_error = ""
+
+                for doctor in doctors:
+                    caption = (
+                        f"ðŸ” <b>{CLINIC_NAME}</b>\n"
+                        f"<b>Automatic database backup</b>\n"
+                        f"ðŸ“… {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                        f"ðŸ’¾ {os.path.basename(path)}"
+                    )
+
+                    ok, detail = send_telegram_document(
+                        doctor["telegram_bot_token"],
+                        doctor["telegram_chat_id"],
+                        path,
+                        caption=caption,
+                    )
+
+                    if ok:
+                        sent_count += 1
+                    else:
+                        failed_count += 1
+                        last_error = detail
+
+                if sent_count:
+                    telegram_msg = f"Telegram backup sent to {sent_count} account(s)."
+
+                if failed_count:
+                    telegram_msg += f" {failed_count} failed."
+                    if last_error:
+                        telegram_msg += f" Last error: {last_error}"
+
+        except Exception as e:
+            telegram_msg = f"Telegram backup error: {e}"
+
+        return True, (
+            f"Backup created: {os.path.basename(path)}. "
+            f"Local old backups removed: {local_removed}. "
+            f"{drive_msg} "
+            f"{telegram_msg}"
+        )
+
     except Exception as e:
         return False, f"Automatic backup failed: {e}"
 
+
+@app.route("/cron/automatic-backup", methods=["GET", "POST"])
+def cron_automatic_backup():
+    """
+    Secure endpoint for Render Cron Jobs.
+
+    Authentication:
+      CRON_SECRET environment variable
+      Header: X-Cron-Secret
+      or query parameter: ?key=
+    """
+    import hmac
+
+    configured_secret = (os.environ.get("CRON_SECRET") or "").strip()
+
+    if not configured_secret:
+        return jsonify({
+            "ok": False,
+            "error": "CRON_SECRET is not configured on the server."
+        }), 503
+
+    supplied_secret = (
+        request.headers.get("X-Cron-Secret")
+        or request.args.get("key")
+        or ""
+    ).strip()
+
+    if not supplied_secret or not hmac.compare_digest(
+        supplied_secret,
+        configured_secret
+    ):
+        return jsonify({
+            "ok": False,
+            "error": "Unauthorized"
+        }), 401
+
+    try:
+        ok, message = _run_automatic_backup()
+
+        if ok:
+            return jsonify({
+                "ok": True,
+                "message": message,
+                "timestamp": datetime.now().isoformat(timespec="seconds")
+            }), 200
+
+        return jsonify({
+            "ok": False,
+            "message": message,
+            "timestamp": datetime.now().isoformat(timespec="seconds")
+        }), 500
+
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(timespec="seconds")
+        }), 500
 
 @app.route("/backup")
 @login_required
@@ -1286,7 +1413,7 @@ def monthly_report_html():
         for r in month_rows
     )
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Monthly Â· {m} {y}</title>
+<title>Monthly Ã‚Â· {m} {y}</title>
 <style>
 body{{font-family:Segoe UI,sans-serif;background:#f1f1ef;padding:24px;color:#1a1a1a}}
 .card{{max-width:900px;margin:auto;background:#fff;padding:28px;border-radius:14px;border:1px solid #e1e1df}}
@@ -1300,8 +1427,8 @@ td{{padding:8px;border-bottom:1px solid #e1e1df}}
 .banner{{background:linear-gradient(135deg,#b98a3e,#9c7433);color:#fff;padding:16px;border-radius:12px;text-align:center;margin-top:16px}}
 @media print{{.noprint{{display:none}}}}
 </style></head><body><div class="card">
-<h1>ðŸ¦· {CLINIC_NAME}</h1>
-<p>Monthly report Â· {m} {y} Â· {doc['name'] if doc else ''}</p>
+<h1>Ã°Å¸Â¦Â· {CLINIC_NAME}</h1>
+<p>Monthly report Ã‚Â· {m} {y} Ã‚Â· {doc['name'] if doc else ''}</p>
 <div class="stats">
 <div class="stat">Patients<b>{len(month_rows)}</b></div>
 <div class="stat">Income<b>{income:,.2f} ETB</b></div>
@@ -1328,7 +1455,7 @@ def audit():
 
 
 # ---------------------------------------------------------------------------
-# Background scheduler (runs while the web process is alive â€” 24/7 on a server)
+# Background scheduler (runs while the web process is alive Ã¢â‚¬â€ 24/7 on a server)
 # ---------------------------------------------------------------------------
 def _process_outbox():
     for row in pending_outbox():
@@ -1405,3 +1532,5 @@ _scheduler = None
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
+
