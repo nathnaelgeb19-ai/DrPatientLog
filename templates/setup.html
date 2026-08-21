@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Initial setup · {{ clinic_name }}{% endblock %}
+{% block auth %}
+<div class="login-wrap">
+  <div class="login-card">
+    <div style="color:var(--bronze);font-size:.7rem;font-weight:700;letter-spacing:.1em">HOLY BETHEL</div>
+    <h1>Set up your clinic</h1>
+    <p style="color:var(--muted);margin-top:0">Create the first administrator account. There are no default credentials.</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}{% for cat,msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}{% endwith %}
+    <form method="post" style="margin-top:1.25rem">
+      <div style="margin-bottom:.8rem"><label>Administrator name</label><input name="name" required placeholder="Dr. Full Name"></div>
+      <div style="margin-bottom:.8rem"><label>Username</label><input name="username" required autocomplete="username"></div>
+      <div style="margin-bottom:.8rem"><label>Recovery email</label><input type="email" name="email" required autocomplete="email" placeholder="doctor@example.com"></div>
+      <div style="margin-bottom:.8rem"><label>Password</label><input type="password" name="password" required minlength="8" autocomplete="new-password"></div>
+      <div style="margin-bottom:1.1rem"><label>Confirm password</label><input type="password" name="confirm_password" required minlength="8" autocomplete="new-password"></div>
+      <button class="btn btn-primary" type="submit" style="width:100%">Create administrator account</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

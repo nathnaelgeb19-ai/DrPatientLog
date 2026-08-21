@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}History · {{ clinic_name }}{% endblock %}
+{% block content %}
+<p style="color:var(--bronze);font-size:0.75rem;font-weight:700;letter-spacing:0.08em;margin:0;">ARCHIVE</p>
+<h2 style="font-family:Georgia,serif;margin:0.2rem 0 1rem;">Patient history</h2>
+<div class="panel">
+  <form class="toolbar" method="get">
+    <div class="field"><label>Search</label><input name="q" value="{{ q }}" placeholder="Name, ticket, procedure"></div>
+    <div class="field"><label>From</label><input type="date" name="from" value="{{ date_from }}"></div>
+    <div class="field"><label>To</label><input type="date" name="to" value="{{ date_to }}"></div>
+    <button class="btn btn-steel" type="submit">Filter</button>
+    <a class="btn btn-ghost" href="{{ url_for('patients_export_csv') }}">Export CSV</a>
+    <a class="btn btn-primary" href="{{ url_for('patient_new') }}">+ New</a>
+  </form>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Eth date</th><th>Patient</th><th>Ticket</th><th>Procedure</th><th>Fee</th><th>Cut</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for r in patients %}
+      <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.eth_date }}</td>
+        <td><strong>{{ r.patient_name }}</strong></td>
+        <td>{{ r.ticket_no or '—' }}</td>
+        <td>{{ r.procedure }}</td>
+        <td>{{ "%.2f"|format(r.total_fee or 0) }} ETB</td>
+        <td>{{ "%.2f"|format(r.my_earning or 0) }}</td>
+        <td style="white-space:nowrap;">
+          <a class="btn btn-steel" style="padding:0.25rem 0.5rem;font-size:0.75rem;" href="{{ url_for('patient_edit', pid=r.id) }}">Edit</a>
+          <a class="btn btn-ghost" style="padding:0.25rem 0.5rem;font-size:0.75rem;" href="{{ url_for('patient_receipt', pid=r.id) }}" target="_blank">Receipt</a>
+          <form method="post" action="{{ url_for('patient_delete', pid=r.id) }}" style="display:inline;" onsubmit="return confirm('Delete?');">
+            <button class="btn btn-danger" type="submit" style="padding:0.25rem 0.5rem;font-size:0.75rem;">Del</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="text-align:center;color:var(--muted);">No matching records</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

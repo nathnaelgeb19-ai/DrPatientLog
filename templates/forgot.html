@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Recover password · {{ clinic_name }}{% endblock %}
+{% block auth %}
+<div class="login-wrap"><div class="login-card">
+  <h1>Recover password</h1>
+  <p style="color:var(--muted)">We'll email a one-time reset link to the recovery address on the account.</p>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for cat,msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}{% endwith %}
+  <form method="post" style="margin-top:1rem">
+    <div style="margin-bottom:1rem"><label>Username</label><input name="username" required autocomplete="username"></div>
+    <button class="btn btn-primary" type="submit" style="width:100%">Email reset link</button>
+  </form>
+  <p style="margin-top:1rem"><a href="{{ url_for('login') }}">Back to login</a></p>
+</div></div>
+{% endblock %}
