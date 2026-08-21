@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Backup Center · {{ clinic_name }}{% endblock %}
+{% block content %}
+<section class="page-hero">
+  <div>
+    <div class="eyebrow">DATA PROTECTION</div>
+    <h2>Backup Center</h2>
+    <p>Your clinic data deserves a backup workflow that feels effortless. Create a consistent database snapshot and keep a copy on your computer or in the cloud.</p>
+  </div>
+  <div class="hero-chip secure-chip"><span>●</span> Database protected</div>
+</section>
+
+<div class="backup-grid">
+  <section class="panel premium-card backup-primary">
+    <div class="backup-icon">↧</div>
+    <div class="eyebrow muted-eyebrow">LOCAL COMPUTER BACKUP</div>
+    <h2>Save a copy to this computer</h2>
+    <p class="sub">Downloads a complete SQLite snapshot containing patients, doctors, settings, audit history and Telegram configuration. The snapshot is created safely while the web app is running.</p>
+    <a class="btn btn-primary btn-lg" href="{{ url_for('backup_download') }}">Download clinic backup</a>
+    <div class="backup-tip"><strong>Recommended:</strong> keep one copy on a separate drive or secure computer. The browser will place the file in its normal download location.</div>
+  </section>
+
+  <section class="panel premium-card backup-status">
+    <div class="eyebrow muted-eyebrow">BACKUP STATUS</div>
+    <div class="status-ring">✓</div>
+    <h2>Ready to protect</h2>
+    <p class="sub">Your database is the central source of truth for the web application.</p>
+    <div class="status-line"><span>Database</span><strong>SQLite</strong></div>
+    <div class="status-line"><span>Backup format</span><strong>.db</strong></div>
+    <div class="status-line"><span>Restore safety copy</span><strong>Automatic</strong></div>
+  </section>
+</div>
+
+<div class="backup-grid secondary">
+  <section class="panel premium-card">
+    <div class="backup-section-icon">☁</div>
+    <div>
+      <div class="eyebrow muted-eyebrow">CLOUD BACKUP</div>
+      <h2>Google Drive</h2>
+      <p class="sub">Keep an off-device copy for disaster recovery.</p>
+      {% if gdrive_connected %}
+        <div class="connected-pill">✓ Google Drive connected</div>
+        <div class="action-row">
+          <form method="post" action="{{ url_for('google_upload') }}"><button class="btn btn-primary" type="submit">Upload latest backup</button></form>
+          <form method="post" action="{{ url_for('google_disconnect') }}"><button class="btn btn-ghost" type="submit">Disconnect</button></form>
+        </div>
+      {% elif gdrive_creds %}
+        <a class="btn btn-steel" href="{{ url_for('google_connect') }}">Connect Google Drive</a>
+      {% else %}
+        <p class="setup-note">Add <code>data/credentials.json</code> from Google Cloud Console, then refresh this page.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel premium-card">
+    <div class="backup-section-icon">↥</div>
+    <div>
+      <div class="eyebrow muted-eyebrow">DISASTER RECOVERY</div>
+      <h2>Restore database</h2>
+      <p class="sub">Replace the current database with a previous clinic backup. A safety copy of the current database is created first.</p>
+      <form method="post" action="{{ url_for('backup_restore_db') }}" enctype="multipart/form-data"
+            onsubmit="return confirm('This will replace the current clinic database. A safety copy will be created first. Continue?');">
+        <input type="file" name="dbfile" accept=".db,.sqlite,.sqlite3" required>
+        <button class="btn btn-steel" type="submit" style="margin-top:.75rem;">Restore selected backup</button>
+      </form>
+    </div>
+  </section>
+</div>
+
+
+<div class="backup-grid secondary">
+  <section class="panel premium-card" style="grid-column:1/-1">
+    <div class="backup-section-icon">📁</div>
+    <div>
+      <div class="eyebrow muted-eyebrow">AUTOMATIC BACKUP</div>
+      <h2>Backup location & schedule</h2>
+      <p class="sub">Choose the folder on the computer/server running this web application, set the daily time, and test the complete backup process immediately.</p>
+
+      <form method="post" action="{{ url_for('backup_location') }}" class="action-row" style="margin-bottom:12px">
+        <input type="text" name="backup_dir" value="{{ backup_dir }}" placeholder="D:\\DentalBackups or /home/clinic/backups" style="flex:1;min-width:280px;padding:.75rem 1rem;border:1px solid #d8dce1;border-radius:10px">
+        <button class="btn btn-steel" type="submit">Save path</button>
+      </form>
+      <form method="post" action="{{ url_for('backup_location_browse') }}" style="display:inline-block;margin-bottom:18px">
+        <button class="btn btn-ghost" type="submit">📂 Browse for folder</button>
+      </form>
+
+      <form method="post" action="{{ url_for('backup_schedule') }}" class="action-row" style="margin-bottom:12px">
+        <label style="font-weight:700;min-width:150px">Daily backup time</label>
+        <input type="time" name="backup_time" value="{{ backup_time }}" required style="padding:.75rem 1rem;border:1px solid #d8dce1;border-radius:10px">
+        <button class="btn btn-primary" type="submit">Save time</button>
+      </form>
+
+      <form method="post" action="{{ url_for('backup_test') }}" style="margin-top:8px">
+        <button class="btn btn-primary btn-lg" type="submit">▶ Test automatic backup now</button>
+      </form>
+
+      <div class="status-line"><span>Current folder</span><strong style="word-break:break-all">{{ backup_dir }}</strong></div>
+      <div class="status-line"><span>Automatic schedule</span><strong>Every day at {{ backup_time }}</strong></div>
+      <div class="status-line"><span>Retention</span><strong>2 days</strong></div>
+      <p class="backup-tip"><strong>Browse:</strong> The folder picker opens on the computer running the Flask server. This is the only reliable way for a web app to select a server-side folder. On a remote hosted server, enter the server's folder path manually.</p>
+    </div>
+  </section>
+</div>
+
+<div class="backup-grid secondary">
+  <section class="panel premium-card">
+    <div class="eyebrow muted-eyebrow">PATIENT DATA</div>
+    <h2>CSV tools</h2>
+    <p class="sub">Use CSV when you need a portable patient-data export or migration.</p>
+    <div class="action-row">
+      <a class="btn btn-ghost" href="{{ url_for('patients_export_csv') }}">Export patients.csv</a>
+      <form method="post" action="{{ url_for('backup_import_csv') }}" enctype="multipart/form-data">
+        <label class="file-button"><input type="file" name="file" accept=".csv" required> Choose CSV</label>
+        <button class="btn btn-steel" type="submit">Import</button>
+      </form>
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Settings · {{ clinic_name }}{% endblock %}
+{% block content %}
+<p style="color:var(--bronze);font-size:0.75rem;font-weight:700;letter-spacing:0.08em;margin:0;">SETTINGS</p>
+<h2 style="font-family:Georgia,serif;margin:0.2rem 0 1rem;">Settings</h2>
+
+<div class="panel">
+  <h2>Profile</h2>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="profile">
+    <div><label>Name</label><input name="name" value="{{ doc.name }}"></div>
+    <div><label>Base salary (ETB)</label><input name="base_salary" type="number" step="0.01" value="{{ doc.base_salary }}"></div>
+    <div><label>Birth year (password recovery)</label><input name="birth_year" type="number" value="{{ doc.birth_year or '' }}"></div>
+    <div class="full"><button class="btn btn-primary" type="submit">Save profile</button></div>
+  <div style="margin-bottom:.8rem"><label>Recovery email</label><input type="email" name="email" value="{{ doc.email or '' }}" autocomplete="email" placeholder="doctor@example.com"></div></form>
+</div>
+
+<div class="panel">
+  <h2>Login credentials</h2>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="password">
+    <div><label>Username</label><input name="username" value="{{ doc.username or '' }}"></div>
+    <div><label>New password (leave blank to keep)</label><input name="password" type="password"></div>
+    <div class="full"><button class="btn btn-steel" type="submit">Update login</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>App options</h2>
+  <form method="post" action="{{ url_for('app_settings_save') }}" class="form-grid">
+    <div class="full">
+      <label style="text-transform:none;font-size:0.95rem;">
+        <input type="checkbox" name="block_dup" {% if block_dup %}checked{% endif %} style="width:auto;">
+        {{ t('block_dup') }}
+      </label>
+    </div>
+    <div>
+      <label>{{ t('language') }}</label>
+      <select name="ui_language">
+        <option value="en" {% if ui_lang=='en' %}selected{% endif %}>English</option>
+        <option value="am" {% if ui_lang=='am' %}selected{% endif %}>አማርኛ</option>
+      </select>
+    </div>
+    <div class="full"><button class="btn btn-primary" type="submit">Save options</button></div>
+  </form>
+</div>
+{% endblock %}

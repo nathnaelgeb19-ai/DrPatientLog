@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ clinic_name }}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% if doctor %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand-mark"><span>HB</span><div><b>HOLY BETHEL</b><small>Dental Clinic</small></div></div>
+    <div class="clinic-divider"></div>
+    <div class="signed-user"><span class="avatar side-avatar">{{ doctor.name[:1]|upper }}</span><div><small>Signed in</small><strong>{{ doctor.name }}</strong></div></div>
+    <nav>
+      <div class="nav-label">WORKSPACE</div>
+      <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}"><span>⌂</span>{{ t('nav_dash') }}</a>
+      <a href="{{ url_for('patient_new') }}" class="{% if request.endpoint == 'patient_new' %}active{% endif %}"><span>＋</span>{{ t('nav_new') }}</a>
+      <a href="{{ url_for('patients') }}" class="{% if request.endpoint == 'patients' %}active{% endif %}"><span>◷</span>{{ t('nav_history') }}</a>
+      <a href="{{ url_for('monthly') }}" class="{% if request.endpoint == 'monthly' %}active{% endif %}"><span>▦</span>{{ t('nav_monthly') }}</a>
+      <div class="nav-label">CLINIC</div>
+      <a href="{{ url_for('telegram_settings') }}" class="{% if request.endpoint == 'telegram_settings' %}active{% endif %}"><span>✦</span>{{ t('nav_telegram') }}</a>
+      <a href="{{ url_for('doctors_manage') }}" class="{% if request.endpoint == 'doctors_manage' %}active{% endif %}"><span>♙</span>{{ t('nav_doctors') }}</a>
+      <a href="{{ url_for('doctors_settings') }}" class="{% if request.endpoint == 'doctors_settings' %}active{% endif %}"><span>⚙</span>{{ t('nav_settings') }}</a>
+      <a href="{{ url_for('backup_page') }}" class="{% if request.endpoint == 'backup_page' %}active{% endif %}"><span>↧</span>{{ t('nav_backup') }}</a>
+      <a href="{{ url_for('audit') }}" class="{% if request.endpoint == 'audit' %}active{% endif %}"><span>≡</span>{{ t('nav_audit') }}</a>
+    </nav>
+    <a class="logout-link" href="{{ url_for('logout') }}"><span>↪</span>{{ t('nav_logout') }}</a>
+  </aside>
+  <main class="main">
+    <div class="mobile-brand"><strong>HOLY BETHEL</strong><span>Dental Clinic</span></div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}<div class="flash {{ cat }}"><span>{% if cat=='success' %}✓{% elif cat=='error' %}!{% else %}i{% endif %}</span>{{ msg }}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+    <footer>HOLY BETHEL DENTAL CLINIC <span>•</span> Clinical Practice Management</footer>
+  </main>
+</div>
+{% else %}
+  {% block auth %}{% endblock %}
+{% endif %}
+<script>
+window.HB_CSRF = {{ csrf_token|tojson }};
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(function(form) {
+    if (!form.querySelector('input[name="csrf_token"]')) {
+      const input = document.createElement('input');
+      input.type = 'hidden'; input.name = 'csrf_token'; input.value = window.HB_CSRF;
+      form.appendChild(input);
+    }
+  });
+});
+</script>
+</body>
+</html>

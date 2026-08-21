@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Audit · {{ clinic_name }}{% endblock %}
+{% block content %}
+<p style="color:var(--bronze);font-size:0.75rem;font-weight:700;letter-spacing:0.08em;margin:0;">SECURITY</p>
+<h2 style="font-family:Georgia,serif;margin:0.2rem 0 1rem;">Audit log</h2>
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>When</th><th>Doctor</th><th>Action</th><th>Detail</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.created_at }}</td>
+        <td>{{ r.doctor_name }}</td>
+        <td>{{ r.action }}</td>
+        <td>{{ r.detail }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" style="text-align:center;color:var(--muted);">No entries yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
