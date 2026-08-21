@@ -383,6 +383,28 @@ def create_password_reset_token(username):
     return {"token": token, "name": row["name"], "email": row["email"]}
 
 
+def create_local_password_reset_token(username, birth_year, email):
+    import datetime as _dt
+    username = (username or '').strip()
+    email = (email or '').strip().lower()
+    birth_year = str(birth_year or '').strip()
+    if not username or not birth_year or not email:
+        return None
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    expires = (_dt.datetime.utcnow() + _dt.timedelta(minutes=30)).isoformat()
+    with get_conn() as conn:
+        row = conn.execute('SELECT id, name, birth_year, email FROM doctors WHERE lower(username)=lower(?)', (username,)).fetchone()
+        if not row:
+            return None
+        stored_birth_year = str(row['birth_year'] or '').strip()
+        stored_email = str(row['email'] or '').strip().lower()
+        if stored_birth_year != birth_year or stored_email != email:
+            return None
+        conn.execute('UPDATE doctors SET reset_token_hash=?, reset_token_expires_at=? WHERE id=?', (token_hash, expires, row['id']))
+    return {'token': token, 'name': row['name']}
+
+
 def reset_password_with_token(token, new_password):
     import datetime as _dt
     if not token or not new_password or len(new_password) < 8:

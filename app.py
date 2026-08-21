@@ -1,5 +1,5 @@
 """
-Holy Bethel Dental Clinic — Web application
+Holy Bethel Dental Clinic â€” Web application
 Runs 24/7 on a free/cheap host (Render, Railway, etc.)
 """
 from datetime import datetime, timedelta
@@ -48,6 +48,7 @@ from db import (
     tr,
     set_doctor_email,
     create_password_reset_token,
+    create_local_password_reset_token,
     reset_password_with_token,
 )
 from config import DB_FILE, DATA_DIR
@@ -347,7 +348,7 @@ def patient_new():
             session.get("doctor_name", ""),
             "create",
             entity_id=new_id,
-            detail=f"{patient} · {procedure} · {fee:,.2f}",
+            detail=f"{patient} Â· {procedure} Â· {fee:,.2f}",
         )
         try:
             msg = build_earning_message(
@@ -358,7 +359,7 @@ def patient_new():
         ok, detail = try_send_for_doctor(doctor_id, msg)
         if not ok:
             queue_telegram(doctor_id, msg)
-        flash(f"Saved {patient}" + (" · Telegram sent" if ok else " · Telegram queued"), "success")
+        flash(f"Saved {patient}" + (" Â· Telegram sent" if ok else " Â· Telegram queued"), "success")
         return redirect(url_for("patients"))
 
     return render_template(
@@ -407,7 +408,7 @@ def patient_edit(pid):
             )
         log_audit(
             doctor_id, session.get("doctor_name", ""), "update",
-            entity_id=pid, detail=f"{patient} · {procedure} · {fee:,.2f}",
+            entity_id=pid, detail=f"{patient} Â· {procedure} Â· {fee:,.2f}",
         )
         try:
             msg = build_earning_message(
@@ -503,8 +504,8 @@ h2{{color:#55616c;margin:0 0 8px;border-bottom:3px solid #b98a3e;padding-bottom:
 .total{{background:linear-gradient(135deg,#b98a3e,#9c7433);color:#fff;padding:14px;border-radius:10px;text-align:center;margin-top:16px}}
 @media print{{button{{display:none}}}}
 </style></head><body><div class="card">
-<h2>🦷 {CLINIC_NAME}</h2>
-<p>Treatment Receipt · {session.get('doctor_name','')}</p>
+<h2>ðŸ¦· {CLINIC_NAME}</h2>
+<p>Treatment Receipt Â· {session.get('doctor_name','')}</p>
 <div class="row"><span>Receipt</span><strong>#REC-{r['id']:05d}</strong></div>
 <div class="row"><span>Gregorian</span><strong>{r['greg_date']}</strong></div>
 <div class="row"><span>Ethiopian</span><strong>{r['eth_date']}</strong></div>
@@ -664,20 +665,44 @@ def doctors_manage():
 
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot_password():
+    reset_link = None
+
     if request.method == "POST":
         username = request.form.get("username", "").strip()
-        try:
-            info = create_password_reset_token(username)
-            # Do not reveal whether the username/email exists.
-            if info:
-                _send_password_reset_email(info["email"], info["name"], info["token"])
-            flash("If an account with that username has a recovery email, a reset link has been sent.", "success")
-            return redirect(url_for("login"))
-        except Exception as e:
-            # Avoid leaking account existence while still surfacing mail configuration problems.
-            flash(str(e), "error")
-    return render_template("forgot.html")
+        birth_year = request.form.get("birth_year", "").strip()
+        email = request.form.get("email", "").strip().lower()
 
+        try:
+            info = create_local_password_reset_token(
+                username,
+                birth_year,
+                email
+            )
+
+            if not info:
+                flash(
+                    "The username, birth year, and recovery email do not match our records.",
+                    "error"
+                )
+            else:
+                reset_link = url_for(
+                    "reset_password",
+                    token=info["token"],
+                    _external=True
+                )
+                flash(
+                    "Identity verified. Use the one-time reset link below. "
+                    "It expires in 30 minutes.",
+                    "success"
+                )
+
+        except Exception as e:
+            flash(str(e), "error")
+
+    return render_template(
+        "forgot.html",
+        reset_link=reset_link
+    )
 
 @app.route("/reset-password", methods=["GET", "POST"])
 def reset_password():
@@ -707,7 +732,7 @@ def _send_password_reset_email(recipient, name, token):
         raise RuntimeError("SMTP_HOST, SMTP_FROM and APP_BASE_URL must be configured for email recovery.")
     link = f"{base_url}{url_for('reset_password')}?token={token}"
     msg = EmailMessage()
-    msg["Subject"] = f"{CLINIC_NAME} — password reset"
+    msg["Subject"] = f"{CLINIC_NAME} â€” password reset"
     msg["From"] = sender
     msg["To"] = recipient
     msg.set_content(f"Hello {name},\n\nUse the link below to reset your {CLINIC_NAME} password. This link expires in 30 minutes and can only be used once.\n\n{link}\n\nIf you did not request this, you can ignore this email.\n")
@@ -1261,7 +1286,7 @@ def monthly_report_html():
         for r in month_rows
     )
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Monthly · {m} {y}</title>
+<title>Monthly Â· {m} {y}</title>
 <style>
 body{{font-family:Segoe UI,sans-serif;background:#f1f1ef;padding:24px;color:#1a1a1a}}
 .card{{max-width:900px;margin:auto;background:#fff;padding:28px;border-radius:14px;border:1px solid #e1e1df}}
@@ -1275,8 +1300,8 @@ td{{padding:8px;border-bottom:1px solid #e1e1df}}
 .banner{{background:linear-gradient(135deg,#b98a3e,#9c7433);color:#fff;padding:16px;border-radius:12px;text-align:center;margin-top:16px}}
 @media print{{.noprint{{display:none}}}}
 </style></head><body><div class="card">
-<h1>🦷 {CLINIC_NAME}</h1>
-<p>Monthly report · {m} {y} · {doc['name'] if doc else ''}</p>
+<h1>ðŸ¦· {CLINIC_NAME}</h1>
+<p>Monthly report Â· {m} {y} Â· {doc['name'] if doc else ''}</p>
 <div class="stats">
 <div class="stat">Patients<b>{len(month_rows)}</b></div>
 <div class="stat">Income<b>{income:,.2f} ETB</b></div>
@@ -1303,7 +1328,7 @@ def audit():
 
 
 # ---------------------------------------------------------------------------
-# Background scheduler (runs while the web process is alive — 24/7 on a server)
+# Background scheduler (runs while the web process is alive â€” 24/7 on a server)
 # ---------------------------------------------------------------------------
 def _process_outbox():
     for row in pending_outbox():
