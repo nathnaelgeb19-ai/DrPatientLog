@@ -1,0 +1,484 @@
+"""SQLite access — same schema spirit as the desktop app."""
+import sqlite3
+import secrets
+import hashlib
+from contextlib import contextmanager
+
+from config import DB_FILE, DEFAULT_DOCTOR_NAME
+
+
+@contextmanager
+def get_conn():
+    # timeout + WAL reduces "database is locked" under concurrent reads/writes
+    conn = sqlite3.connect(DB_FILE, timeout=30)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+    except Exception:
+        pass
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        (password or "").encode("utf-8"),
+        salt.encode("utf-8"),
+        120000,
+    ).hex()
+    return f"{salt}${digest}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    if not stored_hash or "$" not in stored_hash:
+        return False
+    salt, expected = stored_hash.split("$", 1)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        (password or "").encode("utf-8"),
+        salt.encode("utf-8"),
+        120000,
+    ).hex()
+    return secrets.compare_digest(digest, expected)
+
+
+def init_db():
+    with get_conn() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS patients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                greg_date TEXT,
+                eth_date TEXT,
+                patient_name TEXT,
+                ticket_no TEXT,
+                procedure TEXT,
+                total_fee REAL,
+                doctor_pct REAL,
+                my_earning REAL,
+                doctor_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS doctors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                base_salary REAL DEFAULT 45000.0,
+                telegram_bot_token TEXT DEFAULT '',
+                telegram_chat_id TEXT DEFAULT '',
+                telegram_enabled INTEGER DEFAULT 0,
+                username TEXT DEFAULT '',
+                password_hash TEXT DEFAULT '',
+                birth_year INTEGER DEFAULT 0,
+                email TEXT DEFAULT '',
+                role TEXT DEFAULT 'doctor',
+                reset_token_hash TEXT DEFAULT '',
+                reset_token_expires_at TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doctor_id INTEGER,
+                doctor_name TEXT,
+                action TEXT,
+                entity TEXT,
+                entity_id TEXT,
+                detail TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS telegram_outbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doctor_id INTEGER,
+                message_text TEXT NOT NULL,
+                attempts INTEGER DEFAULT 0,
+                last_error TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                sent_at TIMESTAMP
+            )
+            """
+        )
+        # Lightweight migrations for databases created by earlier versions.
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(doctors)").fetchall()}
+        for col, ddl in [
+            ("email", "ALTER TABLE doctors ADD COLUMN email TEXT DEFAULT ''"),
+            ("role", "ALTER TABLE doctors ADD COLUMN role TEXT DEFAULT 'doctor'"),
+            ("reset_token_hash", "ALTER TABLE doctors ADD COLUMN reset_token_hash TEXT DEFAULT ''"),
+            ("reset_token_expires_at", "ALTER TABLE doctors ADD COLUMN reset_token_expires_at TEXT DEFAULT ''"),
+        ]:
+            if col not in cols:
+                c.execute(ddl)
+        # Existing installations retain their doctors; new installations are completed by /setup.
+        c.execute("UPDATE doctors SET role='doctor' WHERE role IS NULL OR role=''" )
+        c.execute("SELECT COUNT(*) AS n FROM doctors WHERE role='admin'")
+        if c.fetchone()["n"] == 0:
+            c.execute("SELECT id FROM doctors ORDER BY id LIMIT 1")
+            first = c.fetchone()
+            if first:
+                c.execute("UPDATE doctors SET role='admin' WHERE id=?", (first["id"],))
+        c.execute("SELECT COUNT(*) AS n FROM doctors")
+        if c.fetchone()["n"] == 0:
+            c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('setup_required', '1')")
+        else:
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('setup_required', '0')")
+        for k, v in [
+            ("block_duplicate_tickets", "0"),
+            ("ui_language", "en"),
+            ("stats_range", "eth_month"),
+            ("telegram_daily_report_time", "19:00"),
+            ("telegram_monthly_report_time", "19:00"),
+            ("telegram_last_daily_report_date", ""),
+            ("telegram_last_monthly_report_key", ""),
+        ]:
+            c.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v)
+            )
+
+
+def authenticate(username, password):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM doctors WHERE lower(username) = lower(?)",
+            (username.strip(),),
+        ).fetchone()
+    if not row:
+        return None
+    if not verify_password(password, row["password_hash"] or ""):
+        return None
+    return dict(row)
+
+
+def get_doctor(doctor_id):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM doctors WHERE id = ?", (doctor_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_doctors():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM doctors ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_doctor(name, base_salary=45000.0, username="", password="", birth_year=0, email="", role="doctor"):
+    name = (name or "").strip().title()
+    if not name:
+        raise ValueError("Doctor name is required.")
+    username = (username or "").strip()
+    with get_conn() as conn:
+        if username:
+            if conn.execute(
+                "SELECT id FROM doctors WHERE lower(username)=lower(?)", (username,)
+            ).fetchone():
+                raise ValueError("Username already taken.")
+        try:
+            cur = conn.execute(
+                """INSERT INTO doctors
+                   (name, base_salary, username, password_hash, birth_year, email, role)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (
+                    name,
+                    float(base_salary),
+                    username,
+                    hash_password(password) if password else "",
+                    int(birth_year or 0),
+                    (email or "").strip(),
+                    role if role in ("admin", "doctor") else "doctor",
+                ),
+            )
+            return cur.lastrowid
+        except sqlite3.IntegrityError as e:
+            raise ValueError(f"Doctor '{name}' already exists.") from e
+
+
+def reset_password_by_birth_year(username, birth_year, new_password):
+    username = (username or "").strip()
+    year = int(birth_year)
+    if not new_password or len(new_password) < 4:
+        raise ValueError("New password must be at least 4 characters.")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, birth_year FROM doctors WHERE lower(username)=lower(?)",
+            (username,),
+        ).fetchone()
+        if not row:
+            raise ValueError("No doctor found with that username.")
+        stored = int(row["birth_year"] or 0)
+        if not stored:
+            raise ValueError("No birth year on file.")
+        if stored != year:
+            raise ValueError("Birth year does not match.")
+        conn.execute(
+            "UPDATE doctors SET password_hash=? WHERE id=?",
+            (hash_password(new_password), row["id"]),
+        )
+    return row["id"]
+
+
+def log_audit(doctor_id, doctor_name, action, entity="patient", entity_id="", detail=""):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO audit_log (doctor_id, doctor_name, action, entity, entity_id, detail)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (doctor_id, doctor_name, action, entity, str(entity_id), str(detail)[:2000]),
+        )
+
+
+def queue_telegram(doctor_id, text):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO telegram_outbox (doctor_id, message_text, attempts) VALUES (?, ?, 0)",
+            (doctor_id, text),
+        )
+
+
+def pending_outbox(limit=10):
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM telegram_outbox
+            WHERE sent_at IS NULL AND attempts < 12
+            ORDER BY id ASC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_outbox_sent(row_id):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE telegram_outbox SET sent_at = CURRENT_TIMESTAMP, last_error = '' WHERE id = ?",
+            (row_id,),
+        )
+
+
+def mark_outbox_fail(row_id, attempts, error):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE telegram_outbox SET attempts = ?, last_error = ? WHERE id = ?",
+            (attempts, str(error)[:500], row_id),
+        )
+
+
+def get_setting(key, default=""):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key=?", (key,)
+        ).fetchone()
+    return row["value"] if row and row["value"] is not None else default
+
+
+def set_setting(key, value):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)",
+            (key, str(value)),
+        )
+
+
+def ticket_exists(ticket, doctor_id, exclude_id=None):
+    ticket = (ticket or "").strip().upper()
+    if not ticket:
+        return False
+    with get_conn() as conn:
+        if exclude_id:
+            row = conn.execute(
+                "SELECT id FROM patients WHERE ticket_no=? AND doctor_id=? AND id!=? LIMIT 1",
+                (ticket, doctor_id, exclude_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id FROM patients WHERE ticket_no=? AND doctor_id=? LIMIT 1",
+                (ticket, doctor_id),
+            ).fetchone()
+    return bool(row)
+
+
+def delete_doctor(doctor_id, active_id):
+    if len(list_doctors()) <= 1:
+        raise ValueError("You must keep at least one doctor.")
+    if int(active_id) == int(doctor_id):
+        raise ValueError("Cannot delete the active doctor.")
+    with get_conn() as conn:
+        n = conn.execute(
+            "SELECT COUNT(*) AS c FROM patients WHERE doctor_id=?", (doctor_id,)
+        ).fetchone()["c"]
+        if n:
+            raise ValueError(f"Doctor still has {n} patient record(s).")
+        conn.execute("DELETE FROM doctors WHERE id=?", (doctor_id,))
+
+
+def set_doctor_credentials(doctor_id, username, password=None):
+    username = (username or "").strip()
+    with get_conn() as conn:
+        if username:
+            clash = conn.execute(
+                "SELECT id FROM doctors WHERE lower(username)=lower(?) AND id!=?",
+                (username, doctor_id),
+            ).fetchone()
+            if clash:
+                raise ValueError("Username already taken.")
+        if password:
+            if len(password) < 8:
+                raise ValueError("Password must be at least 8 characters.")
+            conn.execute(
+                "UPDATE doctors SET username=?, password_hash=? WHERE id=?",
+                (username, hash_password(password), doctor_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE doctors SET username=? WHERE id=?", (username, doctor_id)
+            )
+
+
+def set_doctor_email(doctor_id, email):
+    email = (email or "").strip().lower()
+    if email and ("@" not in email or "." not in email.split("@")[-1]):
+        raise ValueError("Please enter a valid email address.")
+    with get_conn() as conn:
+        conn.execute("UPDATE doctors SET email=? WHERE id=?", (email, doctor_id))
+
+
+def create_password_reset_token(username):
+    import datetime as _dt
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    expires = (_dt.datetime.utcnow() + _dt.timedelta(minutes=30)).isoformat()
+    with get_conn() as conn:
+        row = conn.execute("SELECT id, name, email FROM doctors WHERE lower(username)=lower(?)", ((username or "").strip(),)).fetchone()
+        if not row or not row["email"]:
+            return None
+        conn.execute("UPDATE doctors SET reset_token_hash=?, reset_token_expires_at=? WHERE id=?", (token_hash, expires, row["id"]))
+    return {"token": token, "name": row["name"], "email": row["email"]}
+
+
+def reset_password_with_token(token, new_password):
+    import datetime as _dt
+    if not token or not new_password or len(new_password) < 8:
+        raise ValueError("Password must be at least 8 characters.")
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with get_conn() as conn:
+        row = conn.execute("SELECT id, reset_token_expires_at FROM doctors WHERE reset_token_hash=?", (token_hash,)).fetchone()
+        if not row:
+            raise ValueError("This reset link is invalid or has expired.")
+        try:
+            expires = _dt.datetime.fromisoformat(row["reset_token_expires_at"])
+        except Exception:
+            raise ValueError("This reset link is invalid or has expired.")
+        if expires < _dt.datetime.utcnow():
+            raise ValueError("This reset link has expired. Please request a new one.")
+        conn.execute("UPDATE doctors SET password_hash=?, reset_token_hash='', reset_token_expires_at='' WHERE id=?", (hash_password(new_password), row["id"]))
+    return row["id"]
+
+
+def update_doctor_profile(doctor_id, name=None, base_salary=None, birth_year=None):
+    with get_conn() as conn:
+        doc = conn.execute(
+            "SELECT * FROM doctors WHERE id=?", (doctor_id,)
+        ).fetchone()
+        if not doc:
+            raise ValueError("Doctor not found.")
+        n = name.strip().title() if name is not None else doc["name"]
+        s = float(base_salary) if base_salary is not None else doc["base_salary"]
+        b = int(birth_year) if birth_year is not None else int(doc["birth_year"] or 0)
+        conn.execute(
+            "UPDATE doctors SET name=?, base_salary=?, birth_year=? WHERE id=?",
+            (n, s, b, doctor_id),
+        )
+
+
+UI_STRINGS = {
+    "en": {
+        "nav_dash": "Dashboard",
+        "nav_new": "New patient",
+        "nav_history": "History",
+        "nav_monthly": "Monthly",
+        "nav_telegram": "Telegram",
+        "nav_doctors": "Doctors",
+        "nav_settings": "Settings",
+        "nav_audit": "Audit log",
+        "nav_backup": "Backup",
+        "nav_logout": "Sign out",
+        "block_dup": "Block duplicate ticket numbers",
+        "language": "Language",
+    },
+    "am": {
+        "nav_dash": "ዳሽቦርድ",
+        "nav_new": "አዲስ ታካሚ",
+        "nav_history": "ታሪክ",
+        "nav_monthly": "ወርሃዊ",
+        "nav_telegram": "ቴሌግራም",
+        "nav_doctors": "ዶክተሮች",
+        "nav_settings": "ቅንብሮች",
+        "nav_audit": "ኦዲት",
+        "nav_backup": "ባክአፕ",
+        "nav_logout": "ውጣ",
+        "block_dup": "ተመሳሳይ ትኬት አትፍቀድ",
+        "language": "ቋንቋ",
+    },
+}
+
+
+def tr(key, lang=None):
+    if lang is None:
+        lang = get_setting("ui_language", "en") or "en"
+    return UI_STRINGS.get(lang, UI_STRINGS["en"]).get(
+        key, UI_STRINGS["en"].get(key, key)
+    )
+
+
+PROCEDURE_PRESETS = {
+    "Scaling & Polishing": 1500.0,
+    "Composite Restoration": 2000.0,
+    "Veneer (E-max)": 5000.0,
+    "Simple Extraction": 1000.0,
+    "Surgical Extraction": 3500.0,
+    "Root Canal Treatment": 5000.0,
+    "Pulpotomy": 2500.0,
+    "Pulpectomy": 3000.0,
+    "Crown Preparation": 6000.0,
+    "Bridge Placement": 12000.0,
+    "Orthodontics": 2000.0,
+    "Fluoride Application": 1000.0,
+    "Pit & Fissure Sealant": 1200.0,
+    "Complete Denture": 15000.0,
+    "RPD (Zirconia)": 10000.0,
+    "RPD (Ceramic 1)": 8000.0,
+    "RPD (Ceramic 2)": 8500.0,
+    "RPD (Chrome Cobalt)": 9000.0,
+    "RPD (Acrylic)": 5000.0,
+    "Dental Radiograph (X-Ray)": 500.0,
+    "Consultation & Examination": 500.0,
+    "Impression & Cast": 1500.0,
+}
