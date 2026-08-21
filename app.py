@@ -1151,6 +1151,27 @@ def backup_test():
 @admin_required
 def google_connect():
     import google_drive as gdrive
+
+    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
+    redirect_uri = (
+        os.environ.get("GOOGLE_REDIRECT_URI", "").strip()
+        or url_for("google_callback", _external=True)
+    )
+
+    result, err = gdrive.get_auth_url(redirect_uri)
+
+    if err:
+        flash(err, "error")
+        return redirect(url_for("backup_page"))
+
+    # Keep verifier in session AND on disk.
+    session["gdrive_oauth_state"] = result.get("state")
+    session["gdrive_code_verifier"] = result.get("code_verifier")
+    session.modified = True
+
+    return redirect(result["url"])
+    import google_drive as gdrive
     # Local testing allows http://
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
     redirect_uri = url_for("google_callback", _external=True)
@@ -1169,6 +1190,38 @@ def google_connect():
 @login_required
 @admin_required
 def google_callback():
+    import google_drive as gdrive
+
+    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
+    redirect_uri = (
+        os.environ.get("GOOGLE_REDIRECT_URI", "").strip()
+        or url_for("google_callback", _external=True)
+    )
+
+    code_verifier = session.pop(
+        "gdrive_code_verifier",
+        None
+    )
+
+    state = (
+        request.args.get("state")
+        or session.pop("gdrive_oauth_state", None)
+    )
+
+    ok, msg = gdrive.finish_auth(
+        redirect_uri,
+        request.url,
+        code_verifier=code_verifier,
+        state=state,
+    )
+
+    flash(
+        msg,
+        "success" if ok else "error"
+    )
+
+    return redirect(url_for("backup_page"))
     import google_drive as gdrive
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
     redirect_uri = url_for("google_callback", _external=True)
