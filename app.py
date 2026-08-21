@@ -152,6 +152,10 @@ def inject_globals():
     }
 
 
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"}), 200
+    
 @app.route("/")
 def index():
     # The application entry point always requires authentication.  This is
