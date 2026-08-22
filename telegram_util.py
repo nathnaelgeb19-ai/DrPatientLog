@@ -198,67 +198,65 @@ def build_daily_report(doctor_id, greg_date_str=None):
 
 def build_monthly_report(doctor_id, eth_date_str=None):
     eth_date_str = eth_date_str or get_ethiopian_date()
-    parts = (eth_date_str or "").split()
+    parts = (eth_date_str or '').split()
     if len(parts) < 3:
-        return "", ""
+        return '', ''
     eth_m, eth_y = parts[0], parts[2]
-    month_label = f"{eth_m} {eth_y}"
+    month_label = f'{eth_m} {eth_y}'
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT patient_name, ticket_no, procedure, eth_date, total_fee, my_earning FROM patients WHERE doctor_id=? ORDER BY id",
-            (doctor_id,),
-        ).fetchall()
-        doc = conn.execute("SELECT base_salary FROM doctors WHERE id=?", (doctor_id,)).fetchone()
-    month_rows = [r for r in rows if r["eth_date"] and eth_m in r["eth_date"] and eth_y in r["eth_date"]]
-    income = sum(float(r["total_fee"] or 0) for r in month_rows)
-    cut = sum(float(r["my_earning"] or 0) for r in month_rows)
-    base = float(doc["base_salary"] if doc else 45000)
+        rows = conn.execute('SELECT patient_name, ticket_no, procedure, eth_date, total_fee, my_earning FROM patients WHERE doctor_id=? ORDER BY id', (doctor_id,)).fetchall()
+        doc = conn.execute('SELECT base_salary FROM doctors WHERE id=?', (doctor_id,)).fetchone()
+    month_rows = [r for r in rows if r['eth_date'] and eth_m in r['eth_date'] and eth_y in r['eth_date']]
+    income = sum(float(r['total_fee'] or 0) for r in month_rows)
+    cut = sum(float(r['my_earning'] or 0) for r in month_rows)
+    base = float(doc['base_salary'] if doc else 45000)
     take = base + cut
-    report = (
-        f"{_header('ðŸ“Š', 'Monthly report', month_label)}\n"
-        f"👥 Patients treated: <b>{len(month_rows)}</b>\n"
-        f"💰 Total income: <b>{income:,.2f} Birr</b>\n"
-        f"✂️ Your cut: <b>{cut:,.2f} Birr</b>\n"
-        f"ðŸ¦ Base salary: {base:,.2f} Birr\n"
-        f"ðŸ’µ <b>Take-home: {take:,.2f} Birr</b>"
-    )
+    report = (f'{_header("MONTHLY", "Monthly report", month_label)}\n'
+              f'Patients treated: <b>{len(month_rows)}</b>\n'
+              f'Total income: <b>{income:,.2f} Birr</b>\n'
+              f'Your cut: <b>{cut:,.2f} Birr</b>\n'
+              f'Base salary: {base:,.2f} Birr\n'
+              f'<b>Take-home: {take:,.2f} Birr</b>')
     if month_rows:
-        report += f"\n\n📋 <b>Patient records</b> · {min(len(month_rows), 25)} of {len(month_rows)}"
+        report += f'\n\n<b>Patient records</b> - {min(len(month_rows), 25)} of {len(month_rows)}'
         for i, r in enumerate(month_rows[:25], 1):
-            report += (
-                f"\n{i}. {html_escape(str(r['eth_date'] or '—'))}"
-                f" · <b>{html_escape(str(r['patient_name'] or '—'))}</b>"
-                f"\n   {html_escape(str(r['procedure'] or '—'))}"
-                f" · {float(r['total_fee'] or 0):,.2f} Birr"
-            )
-    return report + f"\n{_footer()}", month_label
-
-
+            report += (f'\n{i}. {html_escape(str(r["eth_date"] or "-"))}'
+                       f' - <b>{html_escape(str(r["patient_name"] or "-"))}</b>'
+                       f'\n   {html_escape(str(r["procedure"] or "-"))}'
+                       f' - {float(r["total_fee"] or 0):,.2f} Birr')
+    return report + f'\n{_footer()}', month_label
 def build_earning_message(title, eth, ticket, patient, procedure, fee, cut, doctor_id):
     label, income, cut_sum, base, take = _month_totals(doctor_id, eth)
     return (
-        f"{_header('💰', title)}\n"
-        f"📅 Date: {html_escape(str(eth or '—'))}\n"
-        f"ðŸŽ« Ticket: <b>{html_escape(str(ticket or '—'))}</b>\n"
-        f"ðŸ‘¤ Patient: <b>{html_escape(str(patient or '—'))}</b>\n"
-        f"🦷 Procedure: {html_escape(str(procedure or '—'))}\n"
-        f"💰 Fee: <b>{fee:,.2f} Birr</b>\n"
-        f"✂️ Your cut: <b>{cut:,.2f} Birr</b>\n\n"
-        f"ðŸ“Š <b>Month to date</b> · {html_escape(label)}\n"
-        f"• Income: {income:,.2f} Birr\n"
-        f"• Your cut: {cut_sum:,.2f} Birr\n"
-        f"• Base salary: {base:,.2f} Birr\n"
-        f"ðŸ’µ <b>Take-home: {take:,.2f} Birr</b>\n"
+        f"{_header('EARNING', title)}\n"
+        f"Date: {html_escape(str(eth or '-'))}\n"
+        f"Ticket: <b>{html_escape(str(ticket or '-'))}</b>\n"
+        f"Patient: <b>{html_escape(str(patient or '-'))}</b>\n"
+        f"Procedure: {html_escape(str(procedure or '-'))}\n"
+        f"Fee: <b>{fee:,.2f} Birr</b>\n"
+        f"Your cut: <b>{cut:,.2f} Birr</b>\n\n"
+        f"Month to date - <b>{html_escape(label)}</b>\n"
+        f"- Income: {income:,.2f} Birr\n"
+        f"- Your cut: {cut_sum:,.2f} Birr\n"
+        f"- Base salary: {base:,.2f} Birr\n"
+        f"Take-home: <b>{take:,.2f} Birr</b>\n"
         f"{_footer()}"
     )
 
 
 def build_delete_message(names, count=1):
     if count <= 1:
-        block = f"ðŸ‘¤ Patient: <b>{html_escape(str(names))}</b>"
+        block = f"Patient: <b>{html_escape(str(names))}</b>"
         title = "Record deleted"
     else:
-        block = f"ðŸ‘¤ Patients ({count}):\n" + "\n".join(f"• {html_escape(str(n))}" for n in names)
+        block = f"Patients ({count}):\n" + "\n".join(
+            f"- {html_escape(str(n))}" for n in names
+        )
         title = f"{count} records deleted"
-    return f"{_header('ðŸ—‘', title)}\n{block}\n\nRemoved from the clinic database.\n{_footer()}"
 
+    return (
+        f"{_header('DELETE', title)}\n"
+        f"{block}\n\n"
+        f"Removed from the clinic database.\n"
+        f"{_footer()}"
+    )

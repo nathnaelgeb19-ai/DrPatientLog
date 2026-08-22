@@ -349,7 +349,7 @@ def patient_new():
             session.get("doctor_name", ""),
             "create",
             entity_id=new_id,
-            detail=f"{patient} Â· {procedure} Â· {fee:,.2f}",
+            detail=f"{patient} - {procedure} - {fee:,.2f}",
         )
         try:
             msg = build_earning_message(
@@ -360,7 +360,7 @@ def patient_new():
         ok, detail = try_send_for_doctor(doctor_id, msg)
         if not ok:
             queue_telegram(doctor_id, msg)
-        flash(f"Saved {patient}" + (" Â· Telegram sent" if ok else " Â· Telegram queued"), "success")
+        flash(f"Saved {patient}" + (" - Telegram sent" if ok else " - Telegram queued"), "success")
         return redirect(url_for("patients"))
 
     return render_template(
@@ -409,7 +409,7 @@ def patient_edit(pid):
             )
         log_audit(
             doctor_id, session.get("doctor_name", ""), "update",
-            entity_id=pid, detail=f"{patient} Â· {procedure} Â· {fee:,.2f}",
+            entity_id=pid, detail=f"{patient} - {procedure} - {fee:,.2f}",
         )
         try:
             msg = build_earning_message(
@@ -477,7 +477,7 @@ def patients_export_csv():
         w.writerow([r["id"], r["greg_date"], r["eth_date"], r["patient_name"],
                     r["ticket_no"], r["procedure"], r["total_fee"], r["doctor_pct"],
                     r["my_earning"], r["created_at"]])
-    resp = make_response(buf.getvalue())
+    resp = make_response(chr(65279) + buf.getvalue())
     resp.headers["Content-Type"] = "text/csv; charset=utf-8"
     resp.headers["Content-Disposition"] = (
         f"attachment; filename=patients_{datetime.now():%Y%m%d}.csv"
@@ -505,8 +505,8 @@ h2{{color:#55616c;margin:0 0 8px;border-bottom:3px solid #b98a3e;padding-bottom:
 .total{{background:linear-gradient(135deg,#b98a3e,#9c7433);color:#fff;padding:14px;border-radius:10px;text-align:center;margin-top:16px}}
 @media print{{button{{display:none}}}}
 </style></head><body><div class="card">
-<h2>ðŸ¦· {CLINIC_NAME}</h2>
-<p>Treatment Receipt Â· {session.get('doctor_name','')}</p>
+<h2>Dental {CLINIC_NAME}</h2>
+<p>Treatment Receipt - {session.get('doctor_name','')}</p>
 <div class="row"><span>Receipt</span><strong>#REC-{r['id']:05d}</strong></div>
 <div class="row"><span>Gregorian</span><strong>{r['greg_date']}</strong></div>
 <div class="row"><span>Ethiopian</span><strong>{r['eth_date']}</strong></div>
@@ -1614,7 +1614,7 @@ def monthly_report_html():
         for r in month_rows
     )
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Monthly Â· {m} {y}</title>
+<title>Monthly - {m} {y}</title>
 <style>
 body{{font-family:Segoe UI,sans-serif;background:#f1f1ef;padding:24px;color:#1a1a1a}}
 .card{{max-width:900px;margin:auto;background:#fff;padding:28px;border-radius:14px;border:1px solid #e1e1df}}
@@ -1628,8 +1628,8 @@ td{{padding:8px;border-bottom:1px solid #e1e1df}}
 .banner{{background:linear-gradient(135deg,#b98a3e,#9c7433);color:#fff;padding:16px;border-radius:12px;text-align:center;margin-top:16px}}
 @media print{{.noprint{{display:none}}}}
 </style></head><body><div class="card">
-<h1>ðŸ¦· {CLINIC_NAME}</h1>
-<p>Monthly report Â· {m} {y} Â· {doc['name'] if doc else ''}</p>
+<h1>Dental {CLINIC_NAME}</h1>
+<p>Monthly report - {m} {y} - {doc['name'] if doc else ''}</p>
 <div class="stats">
 <div class="stat">Patients<b>{len(month_rows)}</b></div>
 <div class="stat">Income<b>{income:,.2f} ETB</b></div>
