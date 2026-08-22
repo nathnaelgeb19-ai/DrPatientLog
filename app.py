@@ -1,4 +1,4 @@
-"""
+﻿"""
 Holy Bethel Dental Clinic â€” Web application
 Runs 24/7 on a free/cheap host (Render, Railway, etc.)
 """
@@ -1283,11 +1283,6 @@ def backup_schedule():
         flash("Please enter a valid backup time in HH:MM format.", "error")
         return redirect(url_for("backup_page"))
     set_setting("automatic_backup_time", f"{h:02d}:{m:02d}")
-    if _scheduler is not None:
-        try:
-            _scheduler.reschedule_job("automatic_backup", trigger="cron", hour=h, minute=m)
-        except Exception:
-            pass
     flash(f"Automatic backup time set to {h:02d}:{m:02d}.", "success")
     return redirect(url_for("backup_page"))
 
