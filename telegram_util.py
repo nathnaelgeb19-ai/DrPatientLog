@@ -4,6 +4,11 @@ import ssl
 import urllib.request
 from html import escape as html_escape
 from datetime import datetime
+from config import DB_BACKEND
+def _execute(obj, query, params=()):
+    if DB_BACKEND == "postgresql":
+        query = query.replace("?", "%s")
+    return obj.execute(query, params) if params else obj.execute(query)
 
 from config import CLINIC_NAME, CLINIC_NAME_SHORT
 from ethiopian import get_ethiopian_date
@@ -148,11 +153,11 @@ def _month_totals(doctor_id, eth_date_str):
     eth_m = parts[0] if parts else ""
     eth_y = parts[2] if len(parts) >= 3 else ""
     with get_conn() as conn:
-        rows = conn.execute(
+        rows = _execute(conn,
             "SELECT eth_date, total_fee, my_earning FROM patients WHERE doctor_id=?",
             (doctor_id,),
         ).fetchall()
-        doc = conn.execute("SELECT base_salary FROM doctors WHERE id=?", (doctor_id,)).fetchone()
+        doc = _execute(conn,"SELECT base_salary FROM doctors WHERE id=?", (doctor_id,)).fetchone()
     income = cut_sum = 0.0
     for r in rows:
         if r["eth_date"] and eth_m in r["eth_date"] and eth_y in r["eth_date"]:
@@ -167,7 +172,7 @@ def build_daily_report(doctor_id, greg_date_str=None):
     greg = dt.strftime("%Y-%m-%d")
     eth = get_ethiopian_date(greg)
     with get_conn() as conn:
-        rows = conn.execute(
+        rows = _execute(conn,
             """SELECT patient_name, ticket_no, procedure, total_fee, my_earning
                FROM patients WHERE doctor_id=? AND greg_date=? ORDER BY id""",
             (doctor_id, greg),
@@ -204,8 +209,8 @@ def build_monthly_report(doctor_id, eth_date_str=None):
     eth_m, eth_y = parts[0], parts[2]
     month_label = f'{eth_m} {eth_y}'
     with get_conn() as conn:
-        rows = conn.execute('SELECT patient_name, ticket_no, procedure, eth_date, total_fee, my_earning FROM patients WHERE doctor_id=? ORDER BY id', (doctor_id,)).fetchall()
-        doc = conn.execute('SELECT base_salary FROM doctors WHERE id=?', (doctor_id,)).fetchone()
+        rows = _execute(conn,'SELECT patient_name, ticket_no, procedure, eth_date, total_fee, my_earning FROM patients WHERE doctor_id=? ORDER BY id', (doctor_id,)).fetchall()
+        doc = _execute(conn,'SELECT base_salary FROM doctors WHERE id=?', (doctor_id,)).fetchone()
     month_rows = [r for r in rows if r['eth_date'] and eth_m in r['eth_date'] and eth_y in r['eth_date']]
     income = sum(float(r['total_fee'] or 0) for r in month_rows)
     cut = sum(float(r['my_earning'] or 0) for r in month_rows)

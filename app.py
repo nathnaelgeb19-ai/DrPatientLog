@@ -26,7 +26,7 @@ from flask import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from config import SECRET_KEY, CLINIC_NAME, CLINIC_NAME_SHORT, DAILY_REPORT_TIME, MONTHLY_REPORT_TIME
+from config import SECRET_KEY, CLINIC_NAME, CLINIC_NAME_SHORT, DAILY_REPORT_TIME, MONTHLY_REPORT_TIME, DB_BACKEND, DATABASE_URL
 from db import (
     init_db,
     authenticate,
@@ -66,6 +66,11 @@ try:
 except ImportError:
     build_monthly_report = None
     build_delete_message = None
+def _execute(obj, query, params=()):
+    if DB_BACKEND == "postgresql":
+        query = query.replace("?", "%s")
+        query = query.replace("telegram_enabled=1", "telegram_enabled=TRUE")
+    return obj.execute(query, params) if params else obj.execute(query)
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -236,15 +241,15 @@ def dashboard():
         set_setting("stats_range", stats_range)
 
     with get_conn() as conn:
-        today_cut = conn.execute(
+        today_cut = _execute(conn,
             "SELECT COALESCE(SUM(my_earning),0) AS s FROM patients WHERE doctor_id=? AND greg_date=?",
             (doctor_id, today),
         ).fetchone()["s"]
-        all_rows = conn.execute(
+        all_rows = _execute(conn,
             "SELECT greg_date, eth_date, total_fee, my_earning FROM patients WHERE doctor_id=?",
             (doctor_id,),
         ).fetchall()
-        recent = conn.execute(
+        recent = _execute(conn,
             "SELECT * FROM patients WHERE doctor_id=? ORDER BY id DESC LIMIT 8",
             (doctor_id,),
         ).fetchall()
@@ -288,7 +293,7 @@ def patients():
     date_from = request.args.get("from", "").strip()
     date_to = request.args.get("to", "").strip()
     with get_conn() as conn:
-        rows = conn.execute(
+        rows = _execute(conn,
             """
             SELECT * FROM patients WHERE doctor_id=? ORDER BY id DESC LIMIT 500
             """,
@@ -334,16 +339,29 @@ def patient_new():
                 return redirect(url_for("patient_new"))
         cut = fee * (pct / 100.0)
         with get_conn() as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO patients
-                (greg_date, eth_date, patient_name, ticket_no, procedure,
-                 total_fee, doctor_pct, my_earning, doctor_id)
-                VALUES (?,?,?,?,?,?,?,?,?)
-                """,
-                (greg, eth, patient, ticket, procedure, fee, pct, cut, doctor_id),
-            )
-            new_id = cur.lastrowid
+            if DB_BACKEND == "postgresql":
+                cur = _execute(conn,
+                    """
+                    INSERT INTO patients
+                    (greg_date, eth_date, patient_name, ticket_no, procedure,
+                     total_fee, doctor_pct, my_earning, doctor_id)
+                    VALUES (?,?,?,?,?,?,?,?,?)
+                    RETURNING id
+                    """,
+                    (greg, eth, patient, ticket, procedure, fee, pct, cut, doctor_id),
+                )
+                new_id = cur.fetchone()["id"]
+            else:
+                cur = _execute(conn,
+                    """
+                    INSERT INTO patients
+                    (greg_date, eth_date, patient_name, ticket_no, procedure,
+                     total_fee, doctor_pct, my_earning, doctor_id)
+                    VALUES (?,?,?,?,?,?,?,?,?)
+                    """,
+                    (greg, eth, patient, ticket, procedure, fee, pct, cut, doctor_id),
+                )
+                new_id = cur.lastrowid
         log_audit(
             doctor_id,
             session.get("doctor_name", ""),
@@ -377,7 +395,7 @@ def patient_new():
 def patient_edit(pid):
     doctor_id = session["doctor_id"]
     with get_conn() as conn:
-        row = conn.execute(
+        row = _execute(conn,
             "SELECT * FROM patients WHERE id=? AND doctor_id=?", (pid, doctor_id)
         ).fetchone()
     if not row:
@@ -401,7 +419,7 @@ def patient_edit(pid):
                 return redirect(url_for("patient_edit", pid=pid))
         cut = fee * (pct / 100.0)
         with get_conn() as conn:
-            conn.execute(
+            _execute(conn,
                 """UPDATE patients SET greg_date=?, eth_date=?, patient_name=?, ticket_no=?,
                    procedure=?, total_fee=?, doctor_pct=?, my_earning=?
                    WHERE id=? AND doctor_id=?""",
@@ -434,13 +452,13 @@ def patient_delete(pid):
     doctor_id = session["doctor_id"]
     name = None
     with get_conn() as conn:
-        row = conn.execute(
+        row = _execute(conn,
             "SELECT * FROM patients WHERE id=? AND doctor_id=?",
             (pid, doctor_id),
         ).fetchone()
         if row:
             name = row["patient_name"]
-            conn.execute("DELETE FROM patients WHERE id=?", (pid,))
+            _execute(conn,"DELETE FROM patients WHERE id=?", (pid,))
     # Audit + Telegram after connection closes (avoids SQLite "database is locked")
     if name is not None:
         log_audit(
@@ -466,7 +484,7 @@ def patient_delete(pid):
 def patients_export_csv():
     doctor_id = session["doctor_id"]
     with get_conn() as conn:
-        rows = conn.execute(
+        rows = _execute(conn,
             "SELECT * FROM patients WHERE doctor_id=? ORDER BY id", (doctor_id,)
         ).fetchall()
     buf = io.StringIO()
@@ -490,7 +508,7 @@ def patients_export_csv():
 def patient_receipt(pid):
     doctor_id = session["doctor_id"]
     with get_conn() as conn:
-        r = conn.execute(
+        r = _execute(conn,
             "SELECT * FROM patients WHERE id=? AND doctor_id=?", (pid, doctor_id)
         ).fetchone()
     if not r:
@@ -524,11 +542,11 @@ h2{{color:#55616c;margin:0 0 8px;border-bottom:3px solid #b98a3e;padding-bottom:
 def monthly():
     doctor_id = session["doctor_id"]
     with get_conn() as conn:
-        rows = conn.execute(
+        rows = _execute(conn,
             "SELECT eth_date, total_fee, my_earning FROM patients WHERE doctor_id=?",
             (doctor_id,),
         ).fetchall()
-        doc = conn.execute(
+        doc = _execute(conn,
             "SELECT base_salary FROM doctors WHERE id=?", (doctor_id,)
         ).fetchone()
     base = float(doc["base_salary"] if doc else 45000)
@@ -771,7 +789,7 @@ def telegram_settings():
         daily_t = request.form.get("daily_time", "19:00").strip() or "19:00"
         monthly_t = request.form.get("monthly_time", "19:00").strip() or "19:00"
         with get_conn() as conn:
-            conn.execute(
+            _execute(conn,
                 """
                 UPDATE doctors SET telegram_bot_token=?, telegram_chat_id=?, telegram_enabled=?
                 WHERE id=?
@@ -858,20 +876,66 @@ def app_settings_save():
 
 
 def _create_backup_snapshot():
-    """Create a consistent SQLite backup in the configured automatic-backup folder."""
-    import sqlite3
+    """Create a consistent database backup in the configured backup folder."""
     backup_dir = _get_backup_dir()
+    os.makedirs(backup_dir, exist_ok=True)
+
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    target_path = os.path.join(backup_dir, f"holy_bethel_backup_{stamp}.db")
-    source = sqlite3.connect(DB_FILE, timeout=30)
-    target = sqlite3.connect(target_path)
-    try:
-        with target:
-            source.backup(target)
-    finally:
-        target.close()
-        source.close()
-    return target_path
+
+    if DB_BACKEND == "postgresql":
+        import subprocess
+
+        target_path = os.path.join(
+            backup_dir,
+            f"holy_bethel_backup_{stamp}.sql",
+        )
+
+        try:
+            result = subprocess.run(
+                [
+                    "pg_dump",
+                    DATABASE_URL,
+                    "--no-owner",
+                    "--no-privileges",
+                    "-f",
+                    target_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            if result.returncode != 0:
+                raise RuntimeError(
+                    result.stderr.strip() or "pg_dump failed."
+                )
+
+            return target_path
+
+        except FileNotFoundError:
+            raise RuntimeError(
+                "PostgreSQL backup requires pg_dump, but pg_dump was not found on this computer."
+            )
+
+    else:
+        import sqlite3
+
+        target_path = os.path.join(
+            backup_dir,
+            f"holy_bethel_backup_{stamp}.db",
+        )
+
+        source = sqlite3.connect(DB_FILE, timeout=30)
+        target = sqlite3.connect(target_path)
+
+        try:
+            with target:
+                source.backup(target)
+        finally:
+            target.close()
+            source.close()
+
+        return target_path
 
 
 def _cleanup_local_backups():
@@ -900,7 +964,7 @@ def _cleanup_google_backups():
 
 def _run_automatic_backup():
     """Create local backup, upload to Google Drive, and send to Telegram."""
-    if not os.path.isfile(DB_FILE):
+    if DB_BACKEND == "sqlite" and not os.path.isfile(DB_FILE):
         return False, "Database file not found."
 
     try:
@@ -928,7 +992,7 @@ def _run_automatic_backup():
 
         try:
             with get_conn() as conn:
-                doctors = conn.execute(
+                doctors = _execute(conn,
                     """
                     SELECT id, name, telegram_bot_token, telegram_chat_id
                     FROM doctors
@@ -1490,7 +1554,7 @@ def backup_restore_db():
         test_conn = sqlite3.connect(tmp_path)
         tables = {
             row[0]
-            for row in test_conn.execute(
+            for row in test__execute(conn,
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
@@ -1569,7 +1633,7 @@ def backup_import_csv():
                 if not patient:
                     continue
                 cut = fee * (pct / 100.0)
-                conn.execute(
+                _execute(conn,
                     """INSERT INTO patients
                        (greg_date, eth_date, patient_name, ticket_no, procedure,
                         total_fee, doctor_pct, my_earning, doctor_id)
@@ -1592,10 +1656,10 @@ def monthly_report_html():
     parts = eth.split()
     m, y = (parts[0], parts[2]) if len(parts) >= 3 else ("", "")
     with get_conn() as conn:
-        rows = conn.execute(
+        rows = _execute(conn,
             "SELECT * FROM patients WHERE doctor_id=? ORDER BY id", (doctor_id,)
         ).fetchall()
-        doc = conn.execute(
+        doc = _execute(conn,
             "SELECT name, base_salary FROM doctors WHERE id=?", (doctor_id,)
         ).fetchone()
     month_rows = [
@@ -1649,7 +1713,7 @@ td{{padding:8px;border-bottom:1px solid #e1e1df}}
 @admin_required
 def audit():
     with get_conn() as conn:
-        rows = conn.execute(
+        rows = _execute(conn,
             "SELECT * FROM audit_log ORDER BY id DESC LIMIT 200"
         ).fetchall()
     return render_template("audit.html", rows=rows)
@@ -1670,7 +1734,7 @@ def _process_outbox():
 def _scheduled_daily():
     today = datetime.now().strftime("%Y-%m-%d")
     with get_conn() as conn:
-        docs = conn.execute(
+        docs = _execute(conn,
             "SELECT id FROM doctors WHERE telegram_enabled=1 AND telegram_bot_token!='' AND telegram_chat_id!=''"
         ).fetchall()
         for d in docs:
@@ -1687,7 +1751,7 @@ def _scheduled_monthly():
     if not build_monthly_report:
         return
     with get_conn() as conn:
-        docs = conn.execute(
+        docs = _execute(conn,
             "SELECT id FROM doctors WHERE telegram_enabled=1 AND telegram_bot_token!='' AND telegram_chat_id!=''"
         ).fetchall()
     for d in docs:
@@ -1718,5 +1782,7 @@ def start_scheduler():
 
     sched.start()
     return sched
+
+
 
 
