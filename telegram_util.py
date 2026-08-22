@@ -17,7 +17,7 @@ except ImportError:
 
 
 def _rule():
-    return "â”€" * 22
+    return "─" * 22
 
 
 def _header(emoji, title, subtitle=None):
@@ -26,7 +26,7 @@ def _header(emoji, title, subtitle=None):
         f"<b>{html_escape(title)}</b>",
     ]
     if subtitle:
-        lines[1] = f"<b>{html_escape(title)}</b> Â· {html_escape(str(subtitle))}"
+        lines[1] = f"<b>{html_escape(title)}</b> · {html_escape(str(subtitle))}"
     lines.append(_rule())
     return "\n".join(lines)
 
@@ -175,24 +175,24 @@ def build_daily_report(doctor_id, greg_date_str=None):
     total_income = sum(float(r["total_fee"] or 0) for r in rows)
     total_cut = sum(float(r["my_earning"] or 0) for r in rows)
     report = (
-        f"{_header('ðŸ¦·', 'Daily report')}\n"
-        f"ðŸ“… Gregorian: {html_escape(greg)}\n"
-        f"ðŸ“… Ethiopian: {html_escape(eth or 'â€”')}\n"
-        f"ðŸ‘¥ Patients: <b>{len(rows)}</b>\n"
-        f"ðŸ’° Total income: <b>{total_income:,.2f} Birr</b>\n"
-        f"âœ‚ï¸ Doctor cut: <b>{total_cut:,.2f} Birr</b>"
+        f"{_header('🦷', 'Daily report')}\n"
+        f"📅 Gregorian: {html_escape(greg)}\n"
+        f"📅 Ethiopian: {html_escape(eth or '—')}\n"
+        f"👥 Patients: <b>{len(rows)}</b>\n"
+        f"💰 Total income: <b>{total_income:,.2f} Birr</b>\n"
+        f"✂️ Doctor cut: <b>{total_cut:,.2f} Birr</b>"
     )
     if rows:
-        report += f"\n\nðŸ“‹ <b>Today's records</b> Â· {min(len(rows), 25)} of {len(rows)}"
+        report += f"\n\n📋 <b>Today's records</b> · {min(len(rows), 25)} of {len(rows)}"
         for i, r in enumerate(rows[:25], 1):
-            t = f" Â· #{html_escape(str(r['ticket_no']))}" if r["ticket_no"] else ""
+            t = f" · #{html_escape(str(r['ticket_no']))}" if r["ticket_no"] else ""
             report += (
-                f"\n{i}. <b>{html_escape(str(r['patient_name'] or 'â€”'))}</b>{t}"
-                f"\n   {html_escape(str(r['procedure'] or 'â€”'))}"
-                f" Â· {float(r['total_fee'] or 0):,.2f} Birr"
+                f"\n{i}. <b>{html_escape(str(r['patient_name'] or '—'))}</b>{t}"
+                f"\n   {html_escape(str(r['procedure'] or '—'))}"
+                f" · {float(r['total_fee'] or 0):,.2f} Birr"
             )
     else:
-        report += "\n\nâ€¢ No patient records registered today."
+        report += "\n\n• No patient records registered today."
     return report + f"\n{_footer()}"
 
 
@@ -216,20 +216,20 @@ def build_monthly_report(doctor_id, eth_date_str=None):
     take = base + cut
     report = (
         f"{_header('ðŸ“Š', 'Monthly report', month_label)}\n"
-        f"ðŸ‘¥ Patients treated: <b>{len(month_rows)}</b>\n"
-        f"ðŸ’° Total income: <b>{income:,.2f} Birr</b>\n"
-        f"âœ‚ï¸ Your cut: <b>{cut:,.2f} Birr</b>\n"
+        f"👥 Patients treated: <b>{len(month_rows)}</b>\n"
+        f"💰 Total income: <b>{income:,.2f} Birr</b>\n"
+        f"✂️ Your cut: <b>{cut:,.2f} Birr</b>\n"
         f"ðŸ¦ Base salary: {base:,.2f} Birr\n"
         f"ðŸ’µ <b>Take-home: {take:,.2f} Birr</b>"
     )
     if month_rows:
-        report += f"\n\nðŸ“‹ <b>Patient records</b> Â· {min(len(month_rows), 25)} of {len(month_rows)}"
+        report += f"\n\n📋 <b>Patient records</b> · {min(len(month_rows), 25)} of {len(month_rows)}"
         for i, r in enumerate(month_rows[:25], 1):
             report += (
-                f"\n{i}. {html_escape(str(r['eth_date'] or 'â€”'))}"
-                f" Â· <b>{html_escape(str(r['patient_name'] or 'â€”'))}</b>"
-                f"\n   {html_escape(str(r['procedure'] or 'â€”'))}"
-                f" Â· {float(r['total_fee'] or 0):,.2f} Birr"
+                f"\n{i}. {html_escape(str(r['eth_date'] or '—'))}"
+                f" · <b>{html_escape(str(r['patient_name'] or '—'))}</b>"
+                f"\n   {html_escape(str(r['procedure'] or '—'))}"
+                f" · {float(r['total_fee'] or 0):,.2f} Birr"
             )
     return report + f"\n{_footer()}", month_label
 
@@ -237,17 +237,17 @@ def build_monthly_report(doctor_id, eth_date_str=None):
 def build_earning_message(title, eth, ticket, patient, procedure, fee, cut, doctor_id):
     label, income, cut_sum, base, take = _month_totals(doctor_id, eth)
     return (
-        f"{_header('ðŸ’°', title)}\n"
-        f"ðŸ“… Date: {html_escape(str(eth or 'â€”'))}\n"
-        f"ðŸŽ« Ticket: <b>{html_escape(str(ticket or 'â€”'))}</b>\n"
-        f"ðŸ‘¤ Patient: <b>{html_escape(str(patient or 'â€”'))}</b>\n"
-        f"ðŸ¦· Procedure: {html_escape(str(procedure or 'â€”'))}\n"
-        f"ðŸ’° Fee: <b>{fee:,.2f} Birr</b>\n"
-        f"âœ‚ï¸ Your cut: <b>{cut:,.2f} Birr</b>\n\n"
-        f"ðŸ“Š <b>Month to date</b> Â· {html_escape(label)}\n"
-        f"â€¢ Income: {income:,.2f} Birr\n"
-        f"â€¢ Your cut: {cut_sum:,.2f} Birr\n"
-        f"â€¢ Base salary: {base:,.2f} Birr\n"
+        f"{_header('💰', title)}\n"
+        f"📅 Date: {html_escape(str(eth or '—'))}\n"
+        f"ðŸŽ« Ticket: <b>{html_escape(str(ticket or '—'))}</b>\n"
+        f"ðŸ‘¤ Patient: <b>{html_escape(str(patient or '—'))}</b>\n"
+        f"🦷 Procedure: {html_escape(str(procedure or '—'))}\n"
+        f"💰 Fee: <b>{fee:,.2f} Birr</b>\n"
+        f"✂️ Your cut: <b>{cut:,.2f} Birr</b>\n\n"
+        f"ðŸ“Š <b>Month to date</b> · {html_escape(label)}\n"
+        f"• Income: {income:,.2f} Birr\n"
+        f"• Your cut: {cut_sum:,.2f} Birr\n"
+        f"• Base salary: {base:,.2f} Birr\n"
         f"ðŸ’µ <b>Take-home: {take:,.2f} Birr</b>\n"
         f"{_footer()}"
     )
@@ -258,7 +258,7 @@ def build_delete_message(names, count=1):
         block = f"ðŸ‘¤ Patient: <b>{html_escape(str(names))}</b>"
         title = "Record deleted"
     else:
-        block = f"ðŸ‘¤ Patients ({count}):\n" + "\n".join(f"â€¢ {html_escape(str(n))}" for n in names)
+        block = f"ðŸ‘¤ Patients ({count}):\n" + "\n".join(f"• {html_escape(str(n))}" for n in names)
         title = f"{count} records deleted"
     return f"{_header('ðŸ—‘', title)}\n{block}\n\nRemoved from the clinic database.\n{_footer()}"
 
