@@ -1043,6 +1043,159 @@ def cron_automatic_backup():
             "error": str(e),
             "timestamp": datetime.now().isoformat(timespec="seconds")
         }), 500
+@app.route("/cron/daily-report", methods=["GET", "POST"])
+def cron_daily_report():
+    """
+    Secure endpoint for Render Daily Telegram Report Cron Job.
+
+    Render calls this endpoint every minute. The endpoint checks the
+    configured daily report time using Ethiopia local time and sends
+    the report only when the configured time is reached.
+    """
+    import hmac
+
+    configured_secret = (os.environ.get("CRON_SECRET") or "").strip()
+
+    if not configured_secret:
+        return jsonify({
+            "ok": False,
+            "error": "CRON_SECRET is not configured on the server."
+        }), 503
+
+    supplied_secret = (
+        request.headers.get("X-Cron-Secret")
+        or request.args.get("key")
+        or ""
+    ).strip()
+
+    if not supplied_secret or not hmac.compare_digest(
+        supplied_secret,
+        configured_secret
+    ):
+        return jsonify({
+            "ok": False,
+            "error": "Unauthorized"
+        }), 401
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        now = datetime.now(ZoneInfo("Africa/Addis_Ababa"))
+        current_time = now.strftime("%H:%M")
+
+        configured_time = (
+            get_setting(
+                "telegram_daily_report_time",
+                DAILY_REPORT_TIME
+            )
+            or DAILY_REPORT_TIME
+        ).strip()
+
+        if current_time != configured_time:
+            return jsonify({
+                "ok": True,
+                "skipped": True,
+                "reason": "Not the configured daily report time.",
+                "current_time": current_time,
+                "configured_time": configured_time
+            }), 200
+
+        _scheduled_daily()
+
+        return jsonify({
+            "ok": True,
+            "message": "Daily Telegram report executed.",
+            "timestamp": now.isoformat(timespec="seconds")
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(timespec="seconds")
+        }), 500
+
+
+@app.route("/cron/monthly-report", methods=["GET", "POST"])
+def cron_monthly_report():
+    """
+    Secure endpoint for Render Monthly Telegram Report Cron Job.
+
+    Render calls this endpoint every minute. The endpoint checks the
+    configured monthly report time and Ethiopian month-end before sending.
+    """
+    import hmac
+
+    configured_secret = (os.environ.get("CRON_SECRET") or "").strip()
+
+    if not configured_secret:
+        return jsonify({
+            "ok": False,
+            "error": "CRON_SECRET is not configured on the server."
+        }), 503
+
+    supplied_secret = (
+        request.headers.get("X-Cron-Secret")
+        or request.args.get("key")
+        or ""
+    ).strip()
+
+    if not supplied_secret or not hmac.compare_digest(
+        supplied_secret,
+        configured_secret
+    ):
+        return jsonify({
+            "ok": False,
+            "error": "Unauthorized"
+        }), 401
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        now = datetime.now(ZoneInfo("Africa/Addis_Ababa"))
+        current_time = now.strftime("%H:%M")
+
+        configured_time = (
+            get_setting(
+                "telegram_monthly_report_time",
+                MONTHLY_REPORT_TIME
+            )
+            or MONTHLY_REPORT_TIME
+        ).strip()
+
+        if current_time != configured_time:
+            return jsonify({
+                "ok": True,
+                "skipped": True,
+                "reason": "Not the configured monthly report time.",
+                "current_time": current_time,
+                "configured_time": configured_time
+            }), 200
+
+        today = now.strftime("%Y-%m-%d")
+
+        if not is_ethiopian_month_end(today):
+            return jsonify({
+                "ok": True,
+                "skipped": True,
+                "reason": "Today is not Ethiopian month-end.",
+                "date": today
+            }), 200
+
+        _scheduled_monthly()
+
+        return jsonify({
+            "ok": True,
+            "message": "Monthly Telegram report executed.",
+            "timestamp": now.isoformat(timespec="seconds")
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(timespec="seconds")
+        }), 500
 
 @app.route("/backup")
 @login_required
@@ -1552,38 +1705,23 @@ def _scheduled_monthly():
 
 
 def start_scheduler():
+    """
+    Start background tasks that belong to the Flask application.
+
+    Scheduled backup and Telegram reports are handled by Render Cron Jobs.
+    This prevents duplicate execution between the web service and Render.
+    """
     sched = BackgroundScheduler(daemon=True)
-    sched.add_job(_process_outbox, "interval", minutes=2, id="outbox")
-    daily = get_setting("telegram_daily_report_time", DAILY_REPORT_TIME) or DAILY_REPORT_TIME
-    monthly = get_setting("telegram_monthly_report_time", MONTHLY_REPORT_TIME) or MONTHLY_REPORT_TIME
-    backup_time = get_setting("automatic_backup_time", "19:00") or "19:00"
-    try:
-        bh, bmi = map(int, backup_time.split(":"))
-        sched.add_job(_run_automatic_backup, "cron", hour=bh, minute=bmi, id="automatic_backup", replace_existing=True)
-    except Exception:
-        sched.add_job(_run_automatic_backup, "cron", hour=19, minute=0, id="automatic_backup", replace_existing=True)
-    try:
-        h, mi = map(int, daily.split(":"))
-        sched.add_job(_scheduled_daily, "cron", hour=h, minute=mi, id="daily")
-    except Exception:
-        sched.add_job(_scheduled_daily, "cron", hour=19, minute=0, id="daily")
-    try:
-        h, mi = map(int, monthly.split(":"))
-        sched.add_job(_scheduled_monthly, "cron", hour=h, minute=mi, id="monthly")
-    except Exception:
-        pass
+
+    sched.add_job(
+        _process_outbox,
+        "interval",
+        minutes=2,
+        id="outbox",
+        replace_existing=True
+    )
+
     sched.start()
     return sched
-
-
-_scheduler = None
-
-
-# Scheduler is intentionally not started from Flask requests.
-# Run scheduler.py as a separate process in production to avoid duplicate jobs with multiple web workers.
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
 
 
