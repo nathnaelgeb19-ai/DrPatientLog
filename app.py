@@ -159,10 +159,43 @@ def inject_globals():
     }
 
 
+@app.route("/diagnostic-db")
+@login_required
+def diagnostic_db():
+    import time
+
+    started = time.perf_counter()
+
+    try:
+        with get_conn() as conn:
+            after_connect = time.perf_counter()
+
+            _execute(conn, "SELECT 1").fetchone()
+            after_select = time.perf_counter()
+
+            _execute(
+                conn,
+                "SELECT id FROM doctors ORDER BY id LIMIT 1"
+            ).fetchone()
+            after_doctors = time.perf_counter()
+
+        finished = time.perf_counter()
+
+        return jsonify({
+            "connect_and_context": round(after_connect - started, 4),
+            "select_1": round(after_select - after_connect, 4),
+            "doctors_query": round(after_doctors - after_select, 4),
+            "total": round(finished - started, 4),
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "error": type(e).__name__,
+            "message": str(e),
+        }), 500
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"}), 200
-    
 @app.route("/")
 def index():
     # The application entry point always requires authentication.  This is
