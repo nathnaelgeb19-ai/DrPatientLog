@@ -1194,7 +1194,7 @@ def cron_automatic_backup():
 
         configured_time = (
             get_setting(
-                "automatic_backup_time",
+                "telegram_daily_report_time",
                 "19:00"
             )
             or "19:00"
