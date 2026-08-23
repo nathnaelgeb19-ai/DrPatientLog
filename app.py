@@ -266,58 +266,127 @@ def logout():
 def dashboard():
     doctor_id = session["doctor_id"]
     today = datetime.now().strftime("%Y-%m-%d")
+
     eth = get_ethiopian_date(today)
     parts = eth.split()
     m, y = (parts[0], parts[2]) if len(parts) >= 3 else ("", "")
-    stats_range = request.args.get("range") or get_setting("stats_range", "eth_month") or "eth_month"
+
+    stats_range = (
+        request.args.get("range")
+        or get_setting("stats_range", "eth_month")
+        or "eth_month"
+    )
+
     if request.args.get("range"):
         set_setting("stats_range", stats_range)
 
+    week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+
     with get_conn() as conn:
-        today_cut = _execute(conn,
-            "SELECT COALESCE(SUM(my_earning),0) AS s FROM patients WHERE doctor_id=? AND greg_date=?",
+
+        # Today's earnings
+        today_row = _execute(
+            conn,
+            """
+            SELECT COALESCE(SUM(my_earning), 0) AS total
+            FROM patients
+            WHERE doctor_id = ? AND greg_date = ?
+            """,
             (doctor_id, today),
-        ).fetchone()["s"]
-        all_rows = _execute(conn,
-            "SELECT greg_date, eth_date, total_fee, my_earning FROM patients WHERE doctor_id=?",
-            (doctor_id,),
-        ).fetchall()
-        recent = _execute(conn,
-            "SELECT * FROM patients WHERE doctor_id=? ORDER BY id DESC LIMIT 8",
+        ).fetchone()
+
+        today_cut = float(today_row["total"] or 0)
+
+        # Dashboard statistics.
+        # Let PostgreSQL perform the aggregation instead of loading
+        # the doctor's entire patient history into Python.
+        if stats_range == "today":
+            stats_row = _execute(
+                conn,
+                """
+                SELECT
+                    COUNT(*) AS patient_count,
+                    COALESCE(SUM(total_fee), 0) AS total_income,
+                    COALESCE(SUM(my_earning), 0) AS total_earning
+                FROM patients
+                WHERE doctor_id = ? AND greg_date = ?
+                """,
+                (doctor_id, today),
+            ).fetchone()
+
+        elif stats_range == "week":
+            stats_row = _execute(
+                conn,
+                """
+                SELECT
+                    COUNT(*) AS patient_count,
+                    COALESCE(SUM(total_fee), 0) AS total_income,
+                    COALESCE(SUM(my_earning), 0) AS total_earning
+                FROM patients
+                WHERE doctor_id = ?
+                  AND greg_date >= ?
+                """,
+                (doctor_id, week_ago),
+            ).fetchone()
+
+        elif stats_range == "all":
+            stats_row = _execute(
+                conn,
+                """
+                SELECT
+                    COUNT(*) AS patient_count,
+                    COALESCE(SUM(total_fee), 0) AS total_income,
+                    COALESCE(SUM(my_earning), 0) AS total_earning
+                FROM patients
+                WHERE doctor_id = ?
+                """,
+                (doctor_id,),
+            ).fetchone()
+
+        else:
+            # Ethiopian month.
+            # Preserve the application's existing matching behavior.
+            stats_row = _execute(
+                conn,
+                """
+                SELECT
+                    COUNT(*) AS patient_count,
+                    COALESCE(SUM(total_fee), 0) AS total_income,
+                    COALESCE(SUM(my_earning), 0) AS total_earning
+                FROM patients
+                WHERE doctor_id = ?
+                  AND eth_date LIKE ?
+                """,
+                (doctor_id, f"%{m}%{y}%"),
+            ).fetchone()
+
+        # Only retrieve the eight records actually displayed.
+        recent = _execute(
+            conn,
+            """
+            SELECT *
+            FROM patients
+            WHERE doctor_id = ?
+            ORDER BY id DESC
+            LIMIT 8
+            """,
             (doctor_id,),
         ).fetchall()
 
-    week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-    count = income = cut = 0.0
-    for r in all_rows:
-        g = r["greg_date"] or ""
-        e = r["eth_date"] or ""
-        include = False
-        if stats_range == "today":
-            include = g == today
-        elif stats_range == "week":
-            include = g >= week_ago
-        elif stats_range == "all":
-            include = True
-        else:  # eth_month
-            include = bool(m and y and m in e and y in e)
-        if include:
-            count += 1
-            income += float(r["total_fee"] or 0)
-            cut += float(r["my_earning"] or 0)
+    month_count = int(stats_row["patient_count"] or 0)
+    month_income = float(stats_row["total_income"] or 0)
+    month_cut = float(stats_row["total_earning"] or 0)
 
     return render_template(
         "dashboard.html",
         today_cut=today_cut,
-        month_count=int(count),
-        month_income=income,
-        month_cut=cut,
+        month_count=month_count,
+        month_income=month_income,
+        month_cut=month_cut,
         eth_today=eth,
         recent=recent,
         stats_range=stats_range,
     )
-
-
 @app.route("/patients")
 @login_required
 def patients():

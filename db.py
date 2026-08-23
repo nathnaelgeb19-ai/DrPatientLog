@@ -278,6 +278,24 @@ def init_db():
                     """,
                     (k, v),
                 )
+            # Performance indexes for frequently used patient queries.
+            _execute(
+                c,
+                "CREATE INDEX IF NOT EXISTS idx_patients_doctor_date "
+                "ON patients (doctor_id, greg_date)"
+            )
+
+            _execute(
+                c,
+                "CREATE INDEX IF NOT EXISTS idx_patients_doctor_id "
+                "ON patients (doctor_id, id)"
+            )
+
+            _execute(
+                c,
+                "CREATE INDEX IF NOT EXISTS idx_patients_doctor_eth_date "
+                "ON patients (doctor_id, eth_date)"
+            )
 
         else:
             # SQLite / local Windows development
@@ -447,7 +465,24 @@ def init_db():
                     (k, v),
                 )
 
+            # Performance indexes for frequently used patient queries.
+            _execute(
+                c,
+                "CREATE INDEX IF NOT EXISTS idx_patients_doctor_date "
+                "ON patients (doctor_id, greg_date)"
+            )
 
+            _execute(
+                c,
+                "CREATE INDEX IF NOT EXISTS idx_patients_doctor_id "
+                "ON patients (doctor_id, id)"
+            )
+
+            _execute(
+                c,
+                "CREATE INDEX IF NOT EXISTS idx_patients_doctor_eth_date "
+                "ON patients (doctor_id, eth_date)"
+            )
 def authenticate(username, password):
     with get_conn() as conn:
         row = _execute(conn, 
