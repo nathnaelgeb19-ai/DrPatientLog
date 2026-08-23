@@ -1155,14 +1155,14 @@ def _run_automatic_backup():
 @app.route("/cron/automatic-backup", methods=["GET", "POST"])
 def cron_automatic_backup():
     """
-    Secure endpoint for Render Cron Jobs.
+    Secure endpoint for Render/cron-job.org automatic backup.
 
-    Authentication:
-      CRON_SECRET environment variable
-      Header: X-Cron-Secret
-      or query parameter: ?key=
+    The external cron calls this endpoint every minute.
+    The application decides when the configured backup time has been reached
+    and prevents duplicate backups on the same Gregorian calendar day.
     """
     import hmac
+    from zoneinfo import ZoneInfo
 
     configured_secret = (os.environ.get("CRON_SECRET") or "").strip()
 
@@ -1188,20 +1188,96 @@ def cron_automatic_backup():
         }), 401
 
     try:
-        ok, message = _run_automatic_backup()
+        now = datetime.now(ZoneInfo("Africa/Addis_Ababa"))
+        current_time = now.strftime("%H:%M")
+        today = now.strftime("%Y-%m-%d")
 
-        if ok:
+        configured_time = (
+            get_setting(
+                "automatic_backup_time",
+                "19:00"
+            )
+            or "19:00"
+        ).strip()
+
+        # Validate configured time.
+        try:
+            configured_hour, configured_minute = map(
+                int,
+                configured_time.split(":")
+            )
+            if not (
+                0 <= configured_hour <= 23
+                and 0 <= configured_minute <= 59
+            ):
+                raise ValueError
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    f"Invalid automatic backup time: {configured_time}. "
+                    "Expected HH:MM."
+                ),
+                "timestamp": now.isoformat(timespec="seconds")
+            }), 500
+
+        configured_minutes = configured_hour * 60 + configured_minute
+        current_minutes = now.hour * 60 + now.minute
+
+        # Before configured time: nothing to do.
+        if current_minutes < configured_minutes:
             return jsonify({
                 "ok": True,
-                "message": message,
-                "timestamp": datetime.now().isoformat(timespec="seconds")
+                "skipped": True,
+                "reason": "Before configured automatic backup time.",
+                "current_time": current_time,
+                "configured_time": configured_time
             }), 200
 
+        # Prevent duplicate automatic backups on the same day.
+        last_backup_date = (
+            get_setting(
+                "automatic_backup_last_date",
+                ""
+            )
+            or ""
+        ).strip()
+
+        if last_backup_date == today:
+            return jsonify({
+                "ok": True,
+                "skipped": True,
+                "reason": "Automatic backup already completed today.",
+                "current_time": current_time,
+                "configured_time": configured_time,
+                "backup_date": today
+            }), 200
+
+        # Configured time has been reached. Run the existing backup system.
+        ok, message = _run_automatic_backup()
+
+        if not ok:
+            return jsonify({
+                "ok": False,
+                "message": message,
+                "current_time": current_time,
+                "configured_time": configured_time,
+                "timestamp": now.isoformat(timespec="seconds")
+            }), 500
+
+        # Record only after the backup completed successfully.
+        set_setting(
+            "automatic_backup_last_date",
+            today
+        )
         return jsonify({
-            "ok": False,
+            "ok": True,
             "message": message,
-            "timestamp": datetime.now().isoformat(timespec="seconds")
-        }), 500
+            "backup_date": today,
+            "current_time": current_time,
+            "configured_time": configured_time,
+            "timestamp": now.isoformat(timespec="seconds")
+        }), 200
 
     except Exception as e:
         return jsonify({
