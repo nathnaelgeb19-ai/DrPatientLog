@@ -2153,6 +2153,11 @@ def backup_restore_db():
 
                     rows.append(converted)
 
+                # Safety tables are internal restore protection tables.
+                # They must never be restored from a PostgreSQL backup.
+                if table_name.startswith('_safety_'):
+                    continue
+
                 copy_blocks.append(
                     (
                         table_name,
@@ -2268,6 +2273,10 @@ def backup_restore_db():
 
                 for statement in statements:
                     upper = statement.upper()
+
+                    # Never recreate internal safety-copy tables from a backup.
+                    if re.search(r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?_safety_', statement, re.IGNORECASE):
+                        continue
 
                     if (
                         upper.startswith("CREATE TABLE")
