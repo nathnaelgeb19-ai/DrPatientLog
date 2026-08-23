@@ -1643,14 +1643,17 @@ def backup_restore_db():
             return redirect(url_for("backup_page"))
 
         if not DATABASE_URL:
-            flash("PostgreSQL database connection is not configured.", "error")
+            flash(
+                "PostgreSQL database connection is not configured.",
+                "error",
+            )
             return redirect(url_for("backup_page"))
 
         tmp_path = None
         safety_path = None
 
         try:
-            # Save uploaded SQL dump to a temporary file.
+            # Save uploaded SQL dump.
             fd, tmp_path = tempfile.mkstemp(
                 prefix="clinic_restore_",
                 suffix=".sql",
@@ -1659,7 +1662,7 @@ def backup_restore_db():
             f.save(tmp_path)
 
             # --------------------------------------------------------
-            # 1. Create a safety dump of the CURRENT PostgreSQL DB.
+            # 1. Create a safety backup of the current database.
             # --------------------------------------------------------
             fd, safety_path = tempfile.mkstemp(
                 prefix="clinic_before_restore_",
@@ -1688,10 +1691,47 @@ def backup_restore_db():
                 )
 
             # --------------------------------------------------------
-            # 2. Restore the uploaded dump.
+            # 2. Read the uploaded SQL dump.
+            # --------------------------------------------------------
+            with open(
+                tmp_path,
+                "r",
+                encoding="utf-8",
+                errors="replace",
+            ) as source:
+                uploaded_sql = source.read()
+
+            # --------------------------------------------------------
+            # 3. Build a restore script.
             #
-            # Everything happens in one PostgreSQL transaction.
-            # If restoration fails, PostgreSQL rolls everything back.
+            # The existing application tables are removed first.
+            # Everything is then restored inside ONE transaction.
+            #
+            # If anything fails, PostgreSQL rolls everything back.
+            # --------------------------------------------------------
+            restore_script = """
+BEGIN;
+
+DROP TABLE IF EXISTS telegram_outbox CASCADE;
+DROP TABLE IF EXISTS audit_log CASCADE;
+DROP TABLE IF EXISTS settings CASCADE;
+DROP TABLE IF EXISTS patients CASCADE;
+DROP TABLE IF EXISTS doctors CASCADE;
+
+""" + uploaded_sql + """
+
+COMMIT;
+"""
+
+            with open(
+                tmp_path,
+                "w",
+                encoding="utf-8",
+            ) as target:
+                target.write(restore_script)
+
+            # --------------------------------------------------------
+            # 4. Restore the uploaded database.
             # --------------------------------------------------------
             restore_result = subprocess.run(
                 [
@@ -1699,7 +1739,6 @@ def backup_restore_db():
                     DATABASE_URL,
                     "--set",
                     "ON_ERROR_STOP=1",
-                    "--single-transaction",
                     "-f",
                     tmp_path,
                 ],
@@ -1714,17 +1753,15 @@ def backup_restore_db():
                     or "PostgreSQL restore failed."
                 )
 
-            log_audit(
-                session.get("doctor_id"),
-                session.get("doctor_name", ""),
-                "restore",
-                entity="database",
-                detail=f"Restored PostgreSQL database from {f.filename}",
-            )
+            # --------------------------------------------------------
+            # 5. Re-run application migrations/default settings.
+            # --------------------------------------------------------
+            init_db()
 
             flash(
                 "PostgreSQL database restored successfully. "
-                "A safety backup of the previous database was created before the restore.",
+                "A safety backup of the previous database was created "
+                "before the restore.",
                 "success",
             )
 
@@ -1742,23 +1779,22 @@ def backup_restore_db():
             return redirect(url_for("backup_page"))
 
         except Exception as e:
-            flash(f"PostgreSQL database restore failed: {e}", "error")
+            flash(
+                f"PostgreSQL database restore failed: {e}",
+                "error",
+            )
             return redirect(url_for("backup_page"))
 
         finally:
-            # Remove temporary uploaded file.
+            # Remove only the temporary uploaded SQL file.
             if tmp_path and os.path.isfile(tmp_path):
                 try:
                     os.remove(tmp_path)
                 except OSError:
                     pass
 
-            # The safety dump is only needed during the restore operation.
-            if safety_path and os.path.isfile(safety_path):
-                try:
-                    os.remove(safety_path)
-                except OSError:
-                    pass
+            # The safety backup is intentionally retained.
+            # It can be used for emergency recovery.
 
     flash("Unknown database backend.", "error")
     return redirect(url_for("backup_page"))
