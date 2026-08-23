@@ -351,10 +351,7 @@ def upload_file(local_path, remote_name=None):
             "%Y%m%d_%H%M%S"
         )
 
-        remote_name = (
-            f"{CLINIC_NAME_SHORT.replace(' ', '_')}"
-            f"_backup_{stamp}.db"
-        )
+        remote_name = os.path.basename(local_path)
 
     try:
         service = build(
@@ -370,7 +367,7 @@ def upload_file(local_path, remote_name=None):
 
         media = MediaFileUpload(
             local_path,
-            mimetype="application/x-sqlite3",
+            mimetype="application/sql",
             resumable=True,
         )
 
