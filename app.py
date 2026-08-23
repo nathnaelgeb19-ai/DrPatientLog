@@ -1484,52 +1484,149 @@ def google_disconnect():
 
 @app.route("/backup/download")
 @login_required
+@admin_required
 def backup_download():
-    """Create a consistent SQLite snapshot and download it to the doctor's device."""
+    """Create and download a consistent database backup."""
     import sqlite3
     import tempfile
+    import subprocess
     from flask import send_file, after_this_request
 
-    if not os.path.isfile(DB_FILE):
-        flash("Database file not found.", "error")
-        return redirect(url_for("backup_page"))
+    snapshot = None
 
-    fd, snapshot = tempfile.mkstemp(prefix="holy_bethel_backup_", suffix=".db")
-    os.close(fd)
     try:
-        source = sqlite3.connect(DB_FILE, timeout=30)
-        target = sqlite3.connect(snapshot)
-        with target:
-            source.backup(target)
-        target.close()
-        source.close()
-        log_audit(
-            session["doctor_id"],
-            session.get("doctor_name", ""),
-            "backup",
-            entity="database",
-            detail="Downloaded a consistent local SQLite backup.",
-        )
-        response = send_file(
-            snapshot,
-            as_attachment=True,
-            download_name=f"holy_bethel_clinic_backup_{datetime.now():%Y%m%d_%H%M%S}.db",
-            mimetype="application/x-sqlite3",
-        )
+        # ------------------------------------------------------------
+        # POSTGRESQL
+        # ------------------------------------------------------------
+        if DB_BACKEND == "postgresql":
+            if not DATABASE_URL:
+                flash(
+                    "PostgreSQL database connection is not configured.",
+                    "error",
+                )
+                return redirect(url_for("backup_page"))
+
+            fd, snapshot = tempfile.mkstemp(
+                prefix="holy_bethel_backup_",
+                suffix=".sql",
+            )
+            os.close(fd)
+
+            result = subprocess.run(
+                [
+                    "pg_dump",
+                    DATABASE_URL,
+                    "--no-owner",
+                    "--no-privileges",
+                    "-f",
+                    snapshot,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            if result.returncode != 0:
+                raise RuntimeError(
+                    result.stderr.strip()
+                    or "PostgreSQL backup could not be created."
+                )
+
+            log_audit(
+                session["doctor_id"],
+                session.get("doctor_name", ""),
+                "backup",
+                entity="database",
+                detail="Downloaded a PostgreSQL database backup.",
+            )
+
+            response = send_file(
+                snapshot,
+                as_attachment=True,
+                download_name=(
+                    f"holy_bethel_clinic_backup_"
+                    f"{datetime.now():%Y%m%d_%H%M%S}.sql"
+                ),
+                mimetype="application/sql",
+            )
+
+        # ------------------------------------------------------------
+        # SQLITE
+        # ------------------------------------------------------------
+        elif DB_BACKEND == "sqlite":
+            if not os.path.isfile(DB_FILE):
+                flash("Database file not found.", "error")
+                return redirect(url_for("backup_page"))
+
+            fd, snapshot = tempfile.mkstemp(
+                prefix="holy_bethel_backup_",
+                suffix=".db",
+            )
+            os.close(fd)
+
+            source = sqlite3.connect(DB_FILE, timeout=30)
+            target = sqlite3.connect(snapshot)
+
+            try:
+                with target:
+                    source.backup(target)
+            finally:
+                target.close()
+                source.close()
+
+            log_audit(
+                session["doctor_id"],
+                session.get("doctor_name", ""),
+                "backup",
+                entity="database",
+                detail="Downloaded a consistent local SQLite backup.",
+            )
+
+            response = send_file(
+                snapshot,
+                as_attachment=True,
+                download_name=(
+                    f"holy_bethel_clinic_backup_"
+                    f"{datetime.now():%Y%m%d_%H%M%S}.db"
+                ),
+                mimetype="application/x-sqlite3",
+            )
+
+        else:
+            raise RuntimeError("Unknown database backend.")
 
         @after_this_request
         def cleanup(response):
-            try:
-                os.remove(snapshot)
-            except OSError:
-                pass
+            if snapshot and os.path.isfile(snapshot):
+                try:
+                    os.remove(snapshot)
+                except OSError:
+                    pass
             return response
 
         return response
-    except Exception as e:
-        if os.path.isfile(snapshot):
+
+    except FileNotFoundError as e:
+        if snapshot and os.path.isfile(snapshot):
             os.remove(snapshot)
-        flash(f"Backup could not be created: {e}", "error")
+
+        command = str(e.filename or "pg_dump")
+
+        flash(
+            f"Database backup requires '{command}', "
+            "but it is not available on the server.",
+            "error",
+        )
+        return redirect(url_for("backup_page"))
+
+    except Exception as e:
+        if snapshot and os.path.isfile(snapshot):
+            os.remove(snapshot)
+
+        flash(
+            f"Backup could not be created: {e}",
+            "error",
+        )
         return redirect(url_for("backup_page"))
 
 
