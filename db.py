@@ -41,6 +41,10 @@ def get_conn():
             row_factory=dict_row,
         )
 
+        # Render/Neon PostgreSQL may not provide a usable search_path.
+        # Explicitly use the standard public schema.
+        conn.execute("SET search_path TO public")
+
         try:
             yield conn
             conn.commit()
