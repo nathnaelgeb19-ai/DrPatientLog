@@ -1214,11 +1214,13 @@ def cron_daily_report():
     """
     Secure endpoint for Render Daily Telegram Report Cron Job.
 
-    Render calls this endpoint every minute. The endpoint checks the
-    configured daily report time using Ethiopia local time and sends
-    the report only when the configured time is reached.
+    Render calls this endpoint every minute. The report is sent once per
+    Ethiopian calendar day when the configured report time has been reached.
+    This avoids missing the report because a Cron invocation arrives a
+    minute or two after the configured time.
     """
     import hmac
+    from zoneinfo import ZoneInfo
 
     configured_secret = (os.environ.get("CRON_SECRET") or "").strip()
 
@@ -1244,10 +1246,9 @@ def cron_daily_report():
         }), 401
 
     try:
-        from zoneinfo import ZoneInfo
-
         now = datetime.now(ZoneInfo("Africa/Addis_Ababa"))
         current_time = now.strftime("%H:%M")
+        today = now.strftime("%Y-%m-%d")
 
         configured_time = (
             get_setting(
@@ -1257,20 +1258,78 @@ def cron_daily_report():
             or DAILY_REPORT_TIME
         ).strip()
 
-        if current_time != configured_time:
+        # If the configured time is invalid, fail clearly instead of
+        # silently skipping the report.
+        try:
+            configured_hour, configured_minute = map(
+                int,
+                configured_time.split(":")
+            )
+            if not (
+                0 <= configured_hour <= 23
+                and 0 <= configured_minute <= 59
+            ):
+                raise ValueError
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    f"Invalid daily report time: {configured_time}. "
+                    "Expected HH:MM."
+                ),
+                "timestamp": now.isoformat(timespec="seconds")
+            }), 500
+
+        configured_minutes = configured_hour * 60 + configured_minute
+        current_minutes = now.hour * 60 + now.minute
+
+        # Prevent duplicate execution on the same day.
+        last_report_date = (
+            get_setting(
+                "telegram_last_daily_report_date",
+                ""
+            )
+            or ""
+        ).strip()
+
+        # Before the configured time: nothing to do.
+        if current_minutes < configured_minutes:
             return jsonify({
                 "ok": True,
                 "skipped": True,
-                "reason": "Not the configured daily report time.",
+                "reason": "Before configured daily report time.",
                 "current_time": current_time,
-                "configured_time": configured_time
+                "configured_time": configured_time,
+                "last_report_date": last_report_date
             }), 200
 
+        # Already sent today.
+        if last_report_date == today:
+            return jsonify({
+                "ok": True,
+                "skipped": True,
+                "reason": "Daily report already sent today.",
+                "current_time": current_time,
+                "configured_time": configured_time,
+                "report_date": today
+            }), 200
+
+        # The configured time has been reached. Send the report now.
         _scheduled_daily()
+
+        # Record the successful execution only after _scheduled_daily()
+        # completes without raising an exception.
+        set_setting(
+            "telegram_last_daily_report_date",
+            today
+        )
 
         return jsonify({
             "ok": True,
             "message": "Daily Telegram report executed.",
+            "report_date": today,
+            "current_time": current_time,
+            "configured_time": configured_time,
             "timestamp": now.isoformat(timespec="seconds")
         }), 200
 
@@ -2430,6 +2489,8 @@ def start_scheduler():
 
     sched.start()
     return sched
+
+
 
 
 
