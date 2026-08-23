@@ -16,6 +16,18 @@ from config import (
 if DB_BACKEND == "postgresql":
     import psycopg
     from psycopg.rows import dict_row
+    from psycopg_pool import ConnectionPool
+
+    pg_pool = ConnectionPool(
+        conninfo=DATABASE_URL,
+        min_size=1,
+        max_size=4,
+        kwargs={
+            "row_factory": dict_row,
+        },
+        open=True,
+    )
+
 
 def _execute(obj, query, params=()):
     if DB_BACKEND == "postgresql":
@@ -36,23 +48,13 @@ def get_conn():
     """
 
     if DB_BACKEND == "postgresql":
-        conn = psycopg.connect(
-            DATABASE_URL,
-            row_factory=dict_row,
-        )
-
-        # Render/Neon PostgreSQL may not provide a usable search_path.
-        # Explicitly use the standard public schema.
-        conn.execute("SET search_path TO public")
-
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        with pg_pool.connection() as conn:
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
     else:
         # Local development continues to use the existing SQLite database.
