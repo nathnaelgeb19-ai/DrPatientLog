@@ -637,11 +637,23 @@ def mark_outbox_fail(row_id, attempts, error):
 
 def get_setting(key, default=""):
     with get_conn() as conn:
-        row = _execute(conn, 
-            "SELECT value FROM settings WHERE key=?", (key,)
-        ).fetchone()
-    return row["value"] if row and row["value"] is not None else default
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+            """
+        )
 
+        row = _execute(
+            conn,
+            "SELECT value FROM settings WHERE key=?",
+            (key,),
+        ).fetchone()
+
+    return row["value"] if row and row["value"] is not None else default
 
 def set_setting(key, value):
     with get_conn() as conn:
