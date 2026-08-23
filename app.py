@@ -1537,7 +1537,7 @@ def backup_download():
 @login_required
 @admin_required
 def backup_restore_db():
-    """Restore either a SQLite .db file or a PostgreSQL .sql dump."""
+    """Restore either a SQLite backup or a PostgreSQL SQL dump."""
     import sqlite3
     import shutil
     import tempfile
@@ -1552,15 +1552,14 @@ def backup_restore_db():
     filename = f.filename.lower()
 
     # ============================================================
-    # SQLITE — LOCAL WINDOWS VERSION
+    # SQLITE — LOCAL DESKTOP VERSION
     # ============================================================
     if DB_BACKEND == "sqlite":
         if not filename.endswith((".db", ".sqlite", ".sqlite3")):
-            flash("For the local application, choose a .db / .sqlite backup.", "error")
-            return redirect(url_for("backup_page"))
-
-        if not DB_FILE:
-            flash("Local database file is not configured.", "error")
+            flash(
+                "File must be a .db, .sqlite, or .sqlite3 backup.",
+                "error",
+            )
             return redirect(url_for("backup_page"))
 
         tmp_path = DB_FILE + ".upload_tmp"
@@ -1568,29 +1567,25 @@ def backup_restore_db():
         try:
             f.save(tmp_path)
 
-            # Validate that the uploaded file is a real SQLite database.
+            # Validate that the uploaded file is really a clinic
+            # SQLite database.
             test_conn = sqlite3.connect(tmp_path)
-
             try:
                 tables = {
                     row[0]
                     for row in test_conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table'"
+                        "SELECT name FROM sqlite_master "
+                        "WHERE type='table'"
                     ).fetchall()
                 }
             finally:
                 test_conn.close()
 
             if "patients" not in tables or "doctors" not in tables:
-                if os.path.isfile(tmp_path):
-                    os.remove(tmp_path)
-
-                flash(
-                    "That file does not look like a clinic database "
-                    "(missing patients/doctors tables).",
-                    "error",
+                raise RuntimeError(
+                    "That file doesn't look like a clinic backup "
+                    "(missing patients/doctors tables)."
                 )
-                return redirect(url_for("backup_page"))
 
             # Keep a safety copy of the current database.
             if os.path.isfile(DB_FILE):
@@ -1600,7 +1595,7 @@ def backup_restore_db():
                 )
                 shutil.copy2(DB_FILE, safety_name)
 
-            # Replace the database only after validation succeeded.
+            # Replace the current database only after validation succeeds.
             shutil.move(tmp_path, DB_FILE)
 
             log_audit(
@@ -1608,13 +1603,13 @@ def backup_restore_db():
                 session.get("doctor_name", ""),
                 "restore",
                 entity="database",
-                detail=f"Restored SQLite database from {f.filename}",
+                detail=f"Restored from uploaded file {f.filename}",
             )
 
             flash(
-                "Database restored successfully. "
-                "A safety copy of the previous database was kept locally. "
-                "Please log out and log back in using the credentials from the restored backup.",
+                "Database restored. A safety copy of the previous database "
+                "was kept. Please log out and log back in with the credentials "
+                "from the restored backup.",
                 "success",
             )
 
@@ -1628,7 +1623,7 @@ def backup_restore_db():
                 except OSError:
                     pass
 
-            flash(f"SQLite database restore failed: {e}", "error")
+            flash(f"Database restore failed: {e}", "error")
             return redirect(url_for("backup_page"))
 
     # ============================================================
@@ -1653,7 +1648,9 @@ def backup_restore_db():
         safety_path = None
 
         try:
-            # Save uploaded SQL dump.
+            # ----------------------------------------------------
+            # 1. Save uploaded SQL backup.
+            # ----------------------------------------------------
             fd, tmp_path = tempfile.mkstemp(
                 prefix="clinic_restore_",
                 suffix=".sql",
@@ -1661,9 +1658,9 @@ def backup_restore_db():
             os.close(fd)
             f.save(tmp_path)
 
-            # --------------------------------------------------------
-            # 1. Create a safety backup of the current database.
-            # --------------------------------------------------------
+            # ----------------------------------------------------
+            # 2. Create safety backup of current PostgreSQL DB.
+            # ----------------------------------------------------
             fd, safety_path = tempfile.mkstemp(
                 prefix="clinic_before_restore_",
                 suffix=".sql",
@@ -1690,9 +1687,9 @@ def backup_restore_db():
                     or "Could not create a safety backup before restore."
                 )
 
-            # --------------------------------------------------------
-            # 2. Read the uploaded SQL dump.
-            # --------------------------------------------------------
+            # ----------------------------------------------------
+            # 3. Read uploaded SQL.
+            # ----------------------------------------------------
             with open(
                 tmp_path,
                 "r",
@@ -1701,27 +1698,22 @@ def backup_restore_db():
             ) as source:
                 uploaded_sql = source.read()
 
-            # --------------------------------------------------------
-            # 3. Build a restore script.
-            #
-            # The existing application tables are removed first.
-            # Everything is then restored inside ONE transaction.
-            #
-            # If anything fails, PostgreSQL rolls everything back.
-            # --------------------------------------------------------
-            restore_script = """
-BEGIN;
+            if not uploaded_sql.strip():
+                raise RuntimeError("The uploaded SQL backup is empty.")
 
-DROP TABLE IF EXISTS telegram_outbox CASCADE;
-DROP TABLE IF EXISTS audit_log CASCADE;
-DROP TABLE IF EXISTS settings CASCADE;
-DROP TABLE IF EXISTS patients CASCADE;
-DROP TABLE IF EXISTS doctors CASCADE;
-
-""" + uploaded_sql + """
-
-COMMIT;
-"""
+            # ----------------------------------------------------
+            # 4. Restore inside one PostgreSQL transaction.
+            # ----------------------------------------------------
+            restore_script = (
+                "BEGIN;\n\n"
+                "DROP TABLE IF EXISTS telegram_outbox CASCADE;\n"
+                "DROP TABLE IF EXISTS audit_log CASCADE;\n"
+                "DROP TABLE IF EXISTS settings CASCADE;\n"
+                "DROP TABLE IF EXISTS patients CASCADE;\n"
+                "DROP TABLE IF EXISTS doctors CASCADE;\n\n"
+                + uploaded_sql
+                + "\n\nCOMMIT;\n"
+            )
 
             with open(
                 tmp_path,
@@ -1730,9 +1722,9 @@ COMMIT;
             ) as target:
                 target.write(restore_script)
 
-            # --------------------------------------------------------
-            # 4. Restore the uploaded database.
-            # --------------------------------------------------------
+            # ----------------------------------------------------
+            # 5. Execute restore.
+            # ----------------------------------------------------
             restore_result = subprocess.run(
                 [
                     "psql",
@@ -1753,15 +1745,66 @@ COMMIT;
                     or "PostgreSQL restore failed."
                 )
 
-            # --------------------------------------------------------
-            # 5. Re-run application migrations/default settings.
-            # --------------------------------------------------------
+            # ----------------------------------------------------
+            # 6. Re-run migrations/default settings.
+            # ----------------------------------------------------
             init_db()
+
+            # ----------------------------------------------------
+            # 7. Verify required application tables.
+            # ----------------------------------------------------
+            with get_conn() as verify_conn:
+                required_tables = {
+                    "patients",
+                    "doctors",
+                    "settings",
+                    "audit_log",
+                    "telegram_outbox",
+                }
+
+                placeholders = ", ".join(
+                    ["%s"] * len(required_tables)
+                )
+
+                verify_cursor = verify_conn.execute(
+                    f"""
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                      AND table_name IN ({placeholders})
+                    """,
+                    tuple(required_tables),
+                )
+
+                found_tables = {
+                    row["table_name"]
+                    for row in verify_cursor.fetchall()
+                }
+
+            missing_tables = required_tables - found_tables
+
+            if missing_tables:
+                raise RuntimeError(
+                    "Restore completed but the required clinic tables "
+                    "are missing: "
+                    + ", ".join(sorted(missing_tables))
+                )
+
+            # ----------------------------------------------------
+            # 8. Restore succeeded.
+            # ----------------------------------------------------
+            log_audit(
+                None,
+                "System",
+                "restore",
+                entity="database",
+                detail=f"Restored PostgreSQL database from {f.filename}",
+            )
 
             flash(
                 "PostgreSQL database restored successfully. "
-                "A safety backup of the previous database was created "
-                "before the restore.",
+                "The restored schema was verified and a safety backup "
+                "of the previous database was created before the restore.",
                 "success",
             )
 
@@ -1786,7 +1829,6 @@ COMMIT;
             return redirect(url_for("backup_page"))
 
         finally:
-            # Remove only the temporary uploaded SQL file.
             if tmp_path and os.path.isfile(tmp_path):
                 try:
                     os.remove(tmp_path)
@@ -1794,10 +1836,11 @@ COMMIT;
                     pass
 
             # The safety backup is intentionally retained.
-            # It can be used for emergency recovery.
 
     flash("Unknown database backend.", "error")
     return redirect(url_for("backup_page"))
+
+
 @app.route("/backup/import-csv", methods=["POST"])
 @login_required
 def backup_import_csv():

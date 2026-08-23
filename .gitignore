@@ -12,3 +12,5 @@ data/token.json
 data/credentials.json
 data/oauth_verifier_*.txt
 *.log
+data/
+app.py.before_restore_fix
