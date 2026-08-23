@@ -1346,10 +1346,12 @@ def cron_monthly_report():
     """
     Secure endpoint for Render Monthly Telegram Report Cron Job.
 
-    Render calls this endpoint every minute. The endpoint checks the
-    configured monthly report time and Ethiopian month-end before sending.
+    Render calls this endpoint every minute. The report is sent once on
+    Ethiopian month-end after the configured report time has been reached.
+    This prevents missed reports when a Cron invocation is delayed.
     """
     import hmac
+    from zoneinfo import ZoneInfo
 
     configured_secret = (os.environ.get("CRON_SECRET") or "").strip()
 
@@ -1375,10 +1377,9 @@ def cron_monthly_report():
         }), 401
 
     try:
-        from zoneinfo import ZoneInfo
-
         now = datetime.now(ZoneInfo("Africa/Addis_Ababa"))
         current_time = now.strftime("%H:%M")
+        today = now.strftime("%Y-%m-%d")
 
         configured_time = (
             get_setting(
@@ -1388,17 +1389,41 @@ def cron_monthly_report():
             or MONTHLY_REPORT_TIME
         ).strip()
 
-        if current_time != configured_time:
+        # Validate configured time.
+        try:
+            configured_hour, configured_minute = map(
+                int,
+                configured_time.split(":")
+            )
+            if not (
+                0 <= configured_hour <= 23
+                and 0 <= configured_minute <= 59
+            ):
+                raise ValueError
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    f"Invalid monthly report time: {configured_time}. "
+                    "Expected HH:MM."
+                ),
+                "timestamp": now.isoformat(timespec="seconds")
+            }), 500
+
+        configured_minutes = configured_hour * 60 + configured_minute
+        current_minutes = now.hour * 60 + now.minute
+
+        # Before configured time.
+        if current_minutes < configured_minutes:
             return jsonify({
                 "ok": True,
                 "skipped": True,
-                "reason": "Not the configured monthly report time.",
+                "reason": "Before configured monthly report time.",
                 "current_time": current_time,
                 "configured_time": configured_time
             }), 200
 
-        today = now.strftime("%Y-%m-%d")
-
+        # Only run on Ethiopian month-end.
         if not is_ethiopian_month_end(today):
             return jsonify({
                 "ok": True,
@@ -1407,11 +1432,40 @@ def cron_monthly_report():
                 "date": today
             }), 200
 
+        # Prevent duplicate monthly reports on the same Ethiopian month-end.
+        last_report_date = (
+            get_setting(
+                "telegram_last_monthly_report_date",
+                ""
+            )
+            or ""
+        ).strip()
+
+        if last_report_date == today:
+            return jsonify({
+                "ok": True,
+                "skipped": True,
+                "reason": "Monthly report already sent today.",
+                "report_date": today,
+                "current_time": current_time,
+                "configured_time": configured_time
+            }), 200
+
+        # Send the monthly report.
         _scheduled_monthly()
+
+        # Record only after successful execution.
+        set_setting(
+            "telegram_last_monthly_report_date",
+            today
+        )
 
         return jsonify({
             "ok": True,
             "message": "Monthly Telegram report executed.",
+            "report_date": today,
+            "current_time": current_time,
+            "configured_time": configured_time,
             "timestamp": now.isoformat(timespec="seconds")
         }), 200
 
@@ -1421,7 +1475,6 @@ def cron_monthly_report():
             "error": str(e),
             "timestamp": datetime.now().isoformat(timespec="seconds")
         }), 500
-
 @app.route("/backup")
 @login_required
 @admin_required
