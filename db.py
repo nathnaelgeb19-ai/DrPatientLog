@@ -50,6 +50,8 @@ def get_conn():
     if DB_BACKEND == "postgresql":
         with pg_pool.connection() as conn:
             try:
+                # Explicitly select the PostgreSQL public schema.
+                conn.execute("SET search_path TO public")
                 yield conn
                 conn.commit()
             except Exception:
@@ -78,7 +80,6 @@ def get_conn():
             raise
         finally:
             conn.close()
-
 
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
