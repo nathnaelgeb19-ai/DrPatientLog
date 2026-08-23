@@ -1272,14 +1272,15 @@ def backup_page():
     except Exception:
         gdrive_creds = False
         gdrive_connected = False
+
     return render_template(
         "backup.html",
         gdrive_creds=gdrive_creds,
         gdrive_connected=gdrive_connected,
         backup_dir=_get_backup_dir(),
         backup_time=get_setting("automatic_backup_time", "19:00"),
+        DB_BACKEND=DB_BACKEND,
     )
-
 
 
 @app.route("/backup/location", methods=["POST"])
@@ -1536,66 +1537,231 @@ def backup_download():
 @login_required
 @admin_required
 def backup_restore_db():
+    """Restore either a SQLite .db file or a PostgreSQL .sql dump."""
     import sqlite3
     import shutil
+    import tempfile
+    import subprocess
+
     f = request.files.get("dbfile")
+
     if not f or not f.filename:
-        flash("Choose a .db file", "error")
-        return redirect(url_for("backup_page"))
-    if not f.filename.lower().endswith((".db", ".sqlite", ".sqlite3")):
-        flash("File must be a .db / .sqlite backup", "error")
+        flash("Choose a backup file.", "error")
         return redirect(url_for("backup_page"))
 
-    tmp_path = DB_FILE + ".upload_tmp"
-    f.save(tmp_path)
+    filename = f.filename.lower()
 
-    # Validate it's really a SQLite database with a doctors/patients table
-    try:
-        test_conn = sqlite3.connect(tmp_path)
-        tables = {
-            row[0]
-            for row in test__execute(conn,
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
-        test_conn.close()
-        if "patients" not in tables or "doctors" not in tables:
-            os.remove(tmp_path)
+    # ============================================================
+    # SQLITE — LOCAL WINDOWS VERSION
+    # ============================================================
+    if DB_BACKEND == "sqlite":
+        if not filename.endswith((".db", ".sqlite", ".sqlite3")):
+            flash("For the local application, choose a .db / .sqlite backup.", "error")
+            return redirect(url_for("backup_page"))
+
+        if not DB_FILE:
+            flash("Local database file is not configured.", "error")
+            return redirect(url_for("backup_page"))
+
+        tmp_path = DB_FILE + ".upload_tmp"
+
+        try:
+            f.save(tmp_path)
+
+            # Validate that the uploaded file is a real SQLite database.
+            test_conn = sqlite3.connect(tmp_path)
+
+            try:
+                tables = {
+                    row[0]
+                    for row in test_conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+            finally:
+                test_conn.close()
+
+            if "patients" not in tables or "doctors" not in tables:
+                if os.path.isfile(tmp_path):
+                    os.remove(tmp_path)
+
+                flash(
+                    "That file does not look like a clinic database "
+                    "(missing patients/doctors tables).",
+                    "error",
+                )
+                return redirect(url_for("backup_page"))
+
+            # Keep a safety copy of the current database.
+            if os.path.isfile(DB_FILE):
+                safety_name = (
+                    DB_FILE
+                    + f".before_restore_{datetime.now():%Y%m%d_%H%M%S}"
+                )
+                shutil.copy2(DB_FILE, safety_name)
+
+            # Replace the database only after validation succeeded.
+            shutil.move(tmp_path, DB_FILE)
+
+            log_audit(
+                session.get("doctor_id"),
+                session.get("doctor_name", ""),
+                "restore",
+                entity="database",
+                detail=f"Restored SQLite database from {f.filename}",
+            )
+
             flash(
-                "That file doesn't look like a clinic backup "
-                "(missing patients/doctors tables).",
+                "Database restored successfully. "
+                "A safety copy of the previous database was kept locally. "
+                "Please log out and log back in using the credentials from the restored backup.",
+                "success",
+            )
+
+            session.clear()
+            return redirect(url_for("login"))
+
+        except Exception as e:
+            if os.path.isfile(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+            flash(f"SQLite database restore failed: {e}", "error")
+            return redirect(url_for("backup_page"))
+
+    # ============================================================
+    # POSTGRESQL — RENDER / NEON VERSION
+    # ============================================================
+    if DB_BACKEND == "postgresql":
+        if not filename.endswith(".sql"):
+            flash(
+                "For the online application, choose a PostgreSQL .sql backup.",
                 "error",
             )
             return redirect(url_for("backup_page"))
-    except Exception as e:
-        if os.path.isfile(tmp_path):
-            os.remove(tmp_path)
-        flash(f"Invalid database file: {e}", "error")
-        return redirect(url_for("backup_page"))
 
-    # Safety copy of the current (about-to-be-replaced) database
-    if os.path.isfile(DB_FILE):
-        safety_name = DB_FILE + f".before_restore_{datetime.now():%Y%m%d_%H%M%S}"
-        shutil.copy2(DB_FILE, safety_name)
+        if not DATABASE_URL:
+            flash("PostgreSQL database connection is not configured.", "error")
+            return redirect(url_for("backup_page"))
 
-    shutil.move(tmp_path, DB_FILE)
+        tmp_path = None
+        safety_path = None
 
-    log_audit(
-        session.get("doctor_id"),
-        session.get("doctor_name", ""),
-        "restore",
-        entity="database",
-        detail=f"Restored from uploaded file {f.filename}",
-    )
-    flash(
-        "Database restored. A safety copy of the previous database was kept on the server. "
-        "Please log out and log back in with the credentials from the restored backup.",
-        "success",
-    )
-    session.clear()
-    return redirect(url_for("login"))
+        try:
+            # Save uploaded SQL dump to a temporary file.
+            fd, tmp_path = tempfile.mkstemp(
+                prefix="clinic_restore_",
+                suffix=".sql",
+            )
+            os.close(fd)
+            f.save(tmp_path)
 
+            # --------------------------------------------------------
+            # 1. Create a safety dump of the CURRENT PostgreSQL DB.
+            # --------------------------------------------------------
+            fd, safety_path = tempfile.mkstemp(
+                prefix="clinic_before_restore_",
+                suffix=".sql",
+            )
+            os.close(fd)
 
+            safety_result = subprocess.run(
+                [
+                    "pg_dump",
+                    DATABASE_URL,
+                    "--no-owner",
+                    "--no-privileges",
+                    "-f",
+                    safety_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            if safety_result.returncode != 0:
+                raise RuntimeError(
+                    safety_result.stderr.strip()
+                    or "Could not create a safety backup before restore."
+                )
+
+            # --------------------------------------------------------
+            # 2. Restore the uploaded dump.
+            #
+            # Everything happens in one PostgreSQL transaction.
+            # If restoration fails, PostgreSQL rolls everything back.
+            # --------------------------------------------------------
+            restore_result = subprocess.run(
+                [
+                    "psql",
+                    DATABASE_URL,
+                    "--set",
+                    "ON_ERROR_STOP=1",
+                    "--single-transaction",
+                    "-f",
+                    tmp_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+
+            if restore_result.returncode != 0:
+                raise RuntimeError(
+                    restore_result.stderr.strip()
+                    or "PostgreSQL restore failed."
+                )
+
+            log_audit(
+                session.get("doctor_id"),
+                session.get("doctor_name", ""),
+                "restore",
+                entity="database",
+                detail=f"Restored PostgreSQL database from {f.filename}",
+            )
+
+            flash(
+                "PostgreSQL database restored successfully. "
+                "A safety backup of the previous database was created before the restore.",
+                "success",
+            )
+
+            session.clear()
+            return redirect(url_for("login"))
+
+        except FileNotFoundError as e:
+            command = str(e.filename or "pg_dump/psql")
+
+            flash(
+                f"PostgreSQL restore requires '{command}', "
+                "but it is not available on the server.",
+                "error",
+            )
+            return redirect(url_for("backup_page"))
+
+        except Exception as e:
+            flash(f"PostgreSQL database restore failed: {e}", "error")
+            return redirect(url_for("backup_page"))
+
+        finally:
+            # Remove temporary uploaded file.
+            if tmp_path and os.path.isfile(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+            # The safety dump is only needed during the restore operation.
+            if safety_path and os.path.isfile(safety_path):
+                try:
+                    os.remove(safety_path)
+                except OSError:
+                    pass
+
+    flash("Unknown database backend.", "error")
+    return redirect(url_for("backup_page"))
 @app.route("/backup/import-csv", methods=["POST"])
 @login_required
 def backup_import_csv():

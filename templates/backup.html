@@ -15,8 +15,13 @@
     <div class="backup-icon">↧</div>
     <div class="eyebrow muted-eyebrow">LOCAL COMPUTER BACKUP</div>
     <h2>Save a copy to this computer</h2>
-    <p class="sub">Downloads a complete SQLite snapshot containing patients, doctors, settings, audit history and Telegram configuration. The snapshot is created safely while the web app is running.</p>
-    <a class="btn btn-primary btn-lg" href="{{ url_for('backup_download') }}">Download clinic backup</a>
+    <p class="sub">
+  Downloads a complete database backup containing patients, doctors, settings,
+  audit history and Telegram configuration.
+</p>
+<a class="btn btn-primary btn-lg" href="{{ url_for('backup_download') }}">
+  Download clinic backup
+</a>
     <div class="backup-tip"><strong>Recommended:</strong> keep one copy on a separate drive or secure computer. The browser will place the file in its normal download location.</div>
   </section>
 
@@ -25,8 +30,15 @@
     <div class="status-ring">✓</div>
     <h2>Ready to protect</h2>
     <p class="sub">Your database is the central source of truth for the web application.</p>
-    <div class="status-line"><span>Database</span><strong>SQLite</strong></div>
-    <div class="status-line"><span>Backup format</span><strong>.db</strong></div>
+    <div class="status-line">
+  <span>Database</span>
+  <strong>{{ "PostgreSQL" if DB_BACKEND == "postgresql" else "SQLite" }}</strong>
+</div>
+
+<div class="status-line">
+  <span>Backup format</span>
+  <strong>{{ ".sql" if DB_BACKEND == "postgresql" else ".db" }}</strong>
+</div>
     <div class="status-line"><span>Restore safety copy</span><strong>Automatic</strong></div>
   </section>
 </div>
@@ -60,7 +72,12 @@
       <p class="sub">Replace the current database with a previous clinic backup. A safety copy of the current database is created first.</p>
       <form method="post" action="{{ url_for('backup_restore_db') }}" enctype="multipart/form-data"
             onsubmit="return confirm('This will replace the current clinic database. A safety copy will be created first. Continue?');">
-        <input type="file" name="dbfile" accept=".db,.sqlite,.sqlite3" required>
+        <input
+  type="file"
+  name="dbfile"
+  accept="{{ '.sql' if DB_BACKEND == 'postgresql' else '.db,.sqlite,.sqlite3' }}"
+  required
+>
         <button class="btn btn-steel" type="submit" style="margin-top:.75rem;">Restore selected backup</button>
       </form>
     </div>
