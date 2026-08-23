@@ -1638,7 +1638,7 @@ def backup_restore_db():
     import sqlite3
     import shutil
     import tempfile
-    import subprocess
+    import re
 
     f = request.files.get("dbfile")
 
@@ -1664,8 +1664,6 @@ def backup_restore_db():
         try:
             f.save(tmp_path)
 
-            # Validate that the uploaded file is really a clinic
-            # SQLite database.
             test_conn = sqlite3.connect(tmp_path)
             try:
                 tables = {
@@ -1684,7 +1682,6 @@ def backup_restore_db():
                     "(missing patients/doctors tables)."
                 )
 
-            # Keep a safety copy of the current database.
             if os.path.isfile(DB_FILE):
                 safety_name = (
                     DB_FILE
@@ -1692,7 +1689,6 @@ def backup_restore_db():
                 )
                 shutil.copy2(DB_FILE, safety_name)
 
-            # Replace the current database only after validation succeeds.
             shutil.move(tmp_path, DB_FILE)
 
             log_audit(
@@ -1741,116 +1737,314 @@ def backup_restore_db():
             )
             return redirect(url_for("backup_page"))
 
-        tmp_path = None
-        safety_path = None
-
         try:
             # ----------------------------------------------------
-            # 1. Save uploaded SQL backup.
+            # 1. Read uploaded SQL file.
             # ----------------------------------------------------
-            fd, tmp_path = tempfile.mkstemp(
-                prefix="clinic_restore_",
-                suffix=".sql",
-            )
-            os.close(fd)
-            f.save(tmp_path)
+            uploaded_sql = f.read()
 
-            # ----------------------------------------------------
-            # 2. Create safety backup of current PostgreSQL DB.
-            # ----------------------------------------------------
-            fd, safety_path = tempfile.mkstemp(
-                prefix="clinic_before_restore_",
-                suffix=".sql",
-            )
-            os.close(fd)
-
-            safety_result = subprocess.run(
-                [
-                    "pg_dump",
-                    DATABASE_URL,
-                    "--no-owner",
-                    "--no-privileges",
-                    "-f",
-                    safety_path,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-
-            if safety_result.returncode != 0:
-                raise RuntimeError(
-                    safety_result.stderr.strip()
-                    or "Could not create a safety backup before restore."
-                )
-
-            # ----------------------------------------------------
-            # 3. Read uploaded SQL.
-            # ----------------------------------------------------
-            with open(
-                tmp_path,
-                "r",
-                encoding="utf-8",
-                errors="replace",
-            ) as source:
-                uploaded_sql = source.read()
-
-            if not uploaded_sql.strip():
+            if not uploaded_sql:
                 raise RuntimeError("The uploaded SQL backup is empty.")
 
-            # ----------------------------------------------------
-            # 4. Restore inside one PostgreSQL transaction.
-            # ----------------------------------------------------
-            restore_script = (
-                "BEGIN;\n\n"
-                "DROP TABLE IF EXISTS telegram_outbox CASCADE;\n"
-                "DROP TABLE IF EXISTS audit_log CASCADE;\n"
-                "DROP TABLE IF EXISTS settings CASCADE;\n"
-                "DROP TABLE IF EXISTS patients CASCADE;\n"
-                "DROP TABLE IF EXISTS doctors CASCADE;\n\n"
-                + uploaded_sql
-                + "\n\nCOMMIT;\n"
+            uploaded_sql = uploaded_sql.decode(
+                "utf-8",
+                errors="replace",
             )
 
-            with open(
-                tmp_path,
-                "w",
-                encoding="utf-8",
-            ) as target:
-                target.write(restore_script)
-
             # ----------------------------------------------------
-            # 5. Execute restore.
+            # 2. Basic validation.
             # ----------------------------------------------------
-            restore_result = subprocess.run(
-                [
-                    "psql",
-                    DATABASE_URL,
-                    "--set",
-                    "ON_ERROR_STOP=1",
-                    "-f",
-                    tmp_path,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=180,
-            )
+            required_markers = [
+                "CREATE TABLE public.doctors",
+                "CREATE TABLE public.patients",
+                "CREATE TABLE public.settings",
+            ]
 
-            if restore_result.returncode != 0:
+            missing_markers = [
+                marker
+                for marker in required_markers
+                if marker not in uploaded_sql
+            ]
+
+            if missing_markers:
                 raise RuntimeError(
-                    restore_result.stderr.strip()
-                    or "PostgreSQL restore failed."
+                    "The uploaded file is not a valid DrPatientLog "
+                    "PostgreSQL backup. Required clinic tables are missing."
                 )
 
             # ----------------------------------------------------
-            # 6. Re-run migrations/default settings.
+            # 3. Parse PostgreSQL COPY sections.
+            #
+            # We intentionally do NOT send the raw pg_dump file to
+            # PostgreSQL because pg_dump files contain psql-specific
+            # commands such as \\restrict, \\connect, and COPY stdin.
+            #
+            # Instead we extract the schema and data and execute them
+            # through psycopg.
+            # ----------------------------------------------------
+            from db import get_conn, init_db
+
+            # Remove pg_dump client-only commands.
+            sql = re.sub(
+                r"^\\restrict.*?$",
+                "",
+                uploaded_sql,
+                flags=re.MULTILINE,
+            )
+
+            sql = re.sub(
+                r"^\\unrestrict.*?$",
+                "",
+                sql,
+                flags=re.MULTILINE,
+            )
+
+            # Remove SET commands. They are not needed for the restore.
+            sql = re.sub(
+                r"^\s*SET\s+.*?;\s*$",
+                "",
+                sql,
+                flags=re.MULTILINE | re.IGNORECASE,
+            )
+
+            # Remove pg_dump comments.
+            sql = re.sub(
+                r"^\s*--.*?$",
+                "",
+                sql,
+                flags=re.MULTILINE,
+            )
+
+            # ----------------------------------------------------
+            # 4. Extract COPY blocks.
+            # ----------------------------------------------------
+            copy_pattern = re.compile(
+                r"COPY\s+public\.([a-zA-Z_][a-zA-Z0-9_]*)\s*"
+                r"\((.*?)\)\s+FROM\s+stdin;\s*\n"
+                r"(.*?)"
+                r"\\\.\s*",
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+
+            copy_blocks = []
+
+            for match in copy_pattern.finditer(sql):
+                table_name = match.group(1)
+                columns_text = match.group(2)
+                data_text = match.group(3)
+
+                columns = [
+                    c.strip()
+                    for c in columns_text.split(",")
+                ]
+
+                rows = []
+
+                for line in data_text.splitlines():
+                    if not line.strip():
+                        continue
+
+                    values = line.split("\t")
+
+                    if len(values) != len(columns):
+                        raise RuntimeError(
+                            f"Invalid data in table '{table_name}'. "
+                            f"Expected {len(columns)} columns but found "
+                            f"{len(values)}."
+                        )
+
+                    converted = []
+
+                    for value in values:
+                        if value == r"\N":
+                            converted.append(None)
+                        else:
+                            converted.append(value)
+
+                    rows.append(converted)
+
+                copy_blocks.append(
+                    (
+                        table_name,
+                        columns,
+                        rows,
+                    )
+                )
+
+            if not copy_blocks:
+                raise RuntimeError(
+                    "No PostgreSQL table data was found in the uploaded backup."
+                )
+
+            # ----------------------------------------------------
+            # 5. Remove COPY blocks from schema SQL.
+            # ----------------------------------------------------
+            schema_sql = copy_pattern.sub("", sql)
+
+            # Remove sequence SET statements because the values
+            # will be restored separately below.
+            schema_sql = re.sub(
+                r"SELECT\s+pg_catalog\.setval\(.*?\);\s*",
+                "",
+                schema_sql,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+
+            # ----------------------------------------------------
+            # 6. Extract sequence values.
+            # ----------------------------------------------------
+            sequence_pattern = re.compile(
+                r"SELECT\s+pg_catalog\.setval\("
+                r"'public\.([^']+)'"
+                r",\s*(\d+)"
+                r",\s*(true|false)"
+                r"\);",
+                flags=re.IGNORECASE,
+            )
+
+            sequence_values = []
+
+            for match in sequence_pattern.finditer(uploaded_sql):
+                sequence_values.append(
+                    (
+                        match.group(1),
+                        int(match.group(2)),
+                        match.group(3).lower() == "true",
+                    )
+                )
+
+            # ----------------------------------------------------
+            # 7. Connect to PostgreSQL.
+            #
+            # Everything below runs through psycopg.
+            # No psql executable is required.
+            # ----------------------------------------------------
+            with get_conn() as conn:
+
+                # ------------------------------------------------
+                # 8. Create a safety backup INSIDE the database
+                # connection by copying current tables to temporary
+                # backup tables.
+                #
+                # This is useful because Render does not provide
+                # shell access on the free service.
+                # ------------------------------------------------
+                safety_suffix = datetime.now().strftime(
+                    "%Y%m%d_%H%M%S"
+                )
+
+                safety_tables = [
+                    "doctors",
+                    "patients",
+                    "settings",
+                    "audit_log",
+                    "telegram_outbox",
+                ]
+
+                for table in safety_tables:
+                    conn.execute(
+                        f"""
+                        CREATE TABLE IF NOT EXISTS
+                        public._safety_{table}_{safety_suffix}
+                        AS TABLE public.{table}
+                        """
+                    )
+
+                # ------------------------------------------------
+                # 9. Drop existing application tables.
+                # ------------------------------------------------
+                for table in [
+                    "telegram_outbox",
+                    "audit_log",
+                    "settings",
+                    "patients",
+                    "doctors",
+                ]:
+                    conn.execute(
+                        f"DROP TABLE IF EXISTS public.{table} CASCADE"
+                    )
+
+                # ------------------------------------------------
+                # 10. Execute CREATE TABLE / schema statements.
+                #
+                # Split statements carefully enough for the
+                # pg_dump format used by this application.
+                # ------------------------------------------------
+                statements = [
+                    stmt.strip()
+                    for stmt in schema_sql.split(";")
+                    if stmt.strip()
+                ]
+
+                for statement in statements:
+                    upper = statement.upper()
+
+                    if (
+                        upper.startswith("CREATE TABLE")
+                        or upper.startswith("ALTER TABLE")
+                        or upper.startswith("CREATE SEQUENCE")
+                        or upper.startswith("ALTER SEQUENCE")
+                        or upper.startswith("CREATE INDEX")
+                    ):
+                        conn.execute(statement)
+
+                # ------------------------------------------------
+                # 11. Restore table data.
+                # ------------------------------------------------
+                for table_name, columns, rows in copy_blocks:
+
+                    if not rows:
+                        continue
+
+                    column_sql = ", ".join(
+                        f'"{column}"'
+                        for column in columns
+                    )
+
+                    placeholders = ", ".join(
+                        ["%s"] * len(columns)
+                    )
+
+                    insert_sql = (
+                        f'INSERT INTO public."{table_name}" '
+                        f"({column_sql}) "
+                        f"VALUES ({placeholders})"
+                    )
+
+                    for row in rows:
+                        conn.execute(
+                            insert_sql,
+                            tuple(row),
+                        )
+
+                # ------------------------------------------------
+                # 12. Restore sequence positions.
+                # ------------------------------------------------
+                for sequence_name, value, is_called in sequence_values:
+                    conn.execute(
+                        "SELECT pg_catalog.setval(%s, %s, %s)",
+                        (
+                            f"public.{sequence_name}",
+                            value,
+                            is_called,
+                        ),
+                    )
+
+                # ------------------------------------------------
+                # 13. Commit the restored database.
+                # ------------------------------------------------
+                conn.commit()
+
+            # ----------------------------------------------------
+            # 14. Run normal application migrations/default setup.
             # ----------------------------------------------------
             init_db()
 
             # ----------------------------------------------------
-            # 7. Verify required application tables.
+            # 15. Verify the restored database.
             # ----------------------------------------------------
             with get_conn() as verify_conn:
+
                 required_tables = {
                     "patients",
                     "doctors",
@@ -1859,18 +2053,14 @@ def backup_restore_db():
                     "telegram_outbox",
                 }
 
-                placeholders = ", ".join(
-                    ["%s"] * len(required_tables)
-                )
-
                 verify_cursor = verify_conn.execute(
-                    f"""
+                    """
                     SELECT table_name
                     FROM information_schema.tables
                     WHERE table_schema = 'public'
-                      AND table_name IN ({placeholders})
+                      AND table_name = ANY(%s)
                     """,
-                    tuple(required_tables),
+                    (list(required_tables),),
                 )
 
                 found_tables = {
@@ -1882,57 +2072,71 @@ def backup_restore_db():
 
             if missing_tables:
                 raise RuntimeError(
-                    "Restore completed but the required clinic tables "
-                    "are missing: "
+                    "Restore completed but these required clinic "
+                    "tables are missing: "
                     + ", ".join(sorted(missing_tables))
                 )
 
             # ----------------------------------------------------
-            # 8. Restore succeeded.
+            # 16. Verify that the actual restored data exists.
+            # ----------------------------------------------------
+            with get_conn() as verify_conn:
+
+                doctor_count = verify_conn.execute(
+                    "SELECT COUNT(*) AS count FROM doctors"
+                ).fetchone()["count"]
+
+                patient_count = verify_conn.execute(
+                    "SELECT COUNT(*) AS count FROM patients"
+                ).fetchone()["count"]
+
+            if doctor_count == 0:
+                raise RuntimeError(
+                    "Restore verification failed: the doctors table "
+                    "was restored but contains no doctors."
+                )
+
+            # ----------------------------------------------------
+            # 17. Record successful restore.
             # ----------------------------------------------------
             log_audit(
                 None,
                 "System",
                 "restore",
                 entity="database",
-                detail=f"Restored PostgreSQL database from {f.filename}",
+                detail=(
+                    f"Restored PostgreSQL database from "
+                    f"{f.filename}. "
+                    f"Doctors: {doctor_count}; "
+                    f"Patients: {patient_count}."
+                ),
             )
 
             flash(
                 "PostgreSQL database restored successfully. "
-                "The restored schema was verified and a safety backup "
-                "of the previous database was created before the restore.",
+                f"{doctor_count} doctor(s) and "
+                f"{patient_count} patient(s) were restored. "
+                "Please log in using the credentials from the backup.",
                 "success",
             )
 
             session.clear()
+
             return redirect(url_for("login"))
 
-        except FileNotFoundError as e:
-            command = str(e.filename or "pg_dump/psql")
-
-            flash(
-                f"PostgreSQL restore requires '{command}', "
-                "but it is not available on the server.",
-                "error",
-            )
-            return redirect(url_for("backup_page"))
-
         except Exception as e:
+
+            # Important:
+            # Do NOT attempt another DROP or destructive operation here.
+            # If an error occurs, report it and leave the database state
+            # as PostgreSQL transaction handling permits.
+
             flash(
                 f"PostgreSQL database restore failed: {e}",
                 "error",
             )
+
             return redirect(url_for("backup_page"))
-
-        finally:
-            if tmp_path and os.path.isfile(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-
-            # The safety backup is intentionally retained.
 
     flash("Unknown database backend.", "error")
     return redirect(url_for("backup_page"))
