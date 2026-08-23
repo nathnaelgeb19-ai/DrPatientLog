@@ -896,7 +896,7 @@ def telegram_settings():
                 UPDATE doctors SET telegram_bot_token=?, telegram_chat_id=?, telegram_enabled=?
                 WHERE id=?
                 """,
-                (token, chat, enabled, doctor_id),
+                (token, chat, bool(enabled), doctor_id),
             )
         set_setting("telegram_daily_report_time", daily_t)
         set_setting("telegram_monthly_report_time", monthly_t)
