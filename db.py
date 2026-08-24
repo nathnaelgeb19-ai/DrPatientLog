@@ -22,8 +22,20 @@ if DB_BACKEND == "postgresql":
         conninfo=DATABASE_URL,
         min_size=1,
         max_size=8,
+        # Validate every connection before handing it to the app.
+        # This discards connections Neon has silently closed (autosuspend)
+        # instead of letting the app crash into psycopg.OperationalError.
+        check=ConnectionPool.check_connection,
+        # Recycle idle connections before Neon's own autosuspend timer
+        # (typically ~5 min) can kill them out from under the pool.
+        max_idle=180,
+        # Give Neon time to wake its compute back up from suspend before
+        # giving up on a getconn() call (default cold start is a few sec,
+        # but can spike higher on the free tier).
+        timeout=45,
         kwargs={
             "row_factory": dict_row,
+            "connect_timeout": 15,
         },
         open=True,
     )
@@ -48,15 +60,29 @@ def get_conn():
     """
 
     if DB_BACKEND == "postgresql":
-        with pg_pool.connection() as conn:
+        import time as _time
+
+        last_err = None
+        for attempt in range(3):
             try:
-                # Explicitly select the PostgreSQL public schema.
-                conn.execute("SET search_path TO public")
-                yield conn
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
+                with pg_pool.connection() as conn:
+                    try:
+                        # Explicitly select the PostgreSQL public schema.
+                        conn.execute("SET search_path TO public")
+                        yield conn
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        raise
+                return
+            except psycopg.OperationalError as e:
+                # Neon likely suspended/closed the connection between the
+                # health check and use. Drop the bad connection and retry
+                # with a short backoff instead of surfacing a 500.
+                last_err = e
+                _time.sleep(1.5 * (attempt + 1))
+                continue
+        raise last_err
 
     else:
         # Local development continues to use the existing SQLite database.

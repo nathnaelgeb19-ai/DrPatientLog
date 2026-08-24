@@ -201,7 +201,17 @@ def diagnostic_db():
         }), 500
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"}), 200
+    # Also touch the database so the uptime cron keeps Neon's compute
+    # awake, not just the Flask process. Failure here still returns 200
+    # for the app itself, but flags db_ok so monitoring can catch it.
+    db_ok = True
+    try:
+        from db import get_conn
+        with get_conn() as conn:
+            conn.execute("SELECT 1")
+    except Exception:
+        db_ok = False
+    return jsonify({"status": "ok", "db_ok": db_ok}), 200
 @app.route("/")
 def index():
     # The application entry point always requires authentication.  This is
