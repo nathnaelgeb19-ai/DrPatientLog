@@ -373,3 +373,272 @@ footer span { color:#c08a3e;margin:0 5px; }
   .form-grid { grid-template-columns:1fr; }
   .full { grid-column:1; }
 }
+
+/* ========================================================================
+   RESPONSIVE SYSTEM — phones, tablets, laptops and wide desktops
+   ======================================================================== */
+html { overflow-x: hidden; }
+body { overflow-x: hidden; }
+img, svg, video { max-width: 100%; height: auto; }
+button, input, select, textarea { font: inherit; }
+button, .btn, a.btn { min-height: 40px; }
+
+/* Keep content readable on very wide displays without making the sidebar
+   or clinical forms excessively stretched. */
+.main > * { min-width: 0; }
+.panel, .premium-card { min-width: 0; }
+
+/* Generic tables get their own horizontal scrolling instead of causing the
+   whole page to overflow on small screens. */
+.panel { overflow: hidden; }
+.panel > table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.panel > table th,
+.panel > table td { white-space: nowrap; }
+
+.form-grid > *, .toolbar > *, .doctor-layout > *, .backup-grid > * { min-width: 0; }
+input, select, textarea { max-width: 100%; }
+textarea { min-height: 110px; resize: vertical; }
+
+.action-row { display: flex; flex-wrap: wrap; gap: .55rem; align-items: center; }
+.action-row .btn { margin: 0 !important; }
+
+.mobile-menu-toggle {
+  display: none;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color: #fff;
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+@media (max-width: 1100px) and (min-width: 721px) {
+  .sidebar { width: 220px; }
+  .main { padding: 28px clamp(18px, 3vw, 34px); }
+  .page-hero h2 { font-size: 1.95rem; }
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .doctor-layout, .backup-grid { grid-template-columns: minmax(0, 1fr); }
+  .backup-grid.secondary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .layout { display: block; min-height: 100vh; }
+  .sidebar {
+    width: 100%;
+    padding: 10px 12px;
+    position: relative;
+    z-index: 50;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+    box-shadow: 0 8px 24px rgba(8,14,20,.10);
+  }
+  .brand-mark {
+    padding: 0 2px;
+    min-height: 48px;
+  }
+  .brand-mark > span { width: 40px; height: 40px; }
+  .mobile-menu-toggle { display: block; margin-left: auto; flex-shrink: 0; }
+  .clinic-divider { margin: 9px 2px 0; }
+  .signed-user { display: none; }
+  .sidebar nav {
+    display: none;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,.07);
+  }
+  .sidebar.mobile-open nav { display: flex; }
+  .sidebar nav a { min-height: 44px; padding: .72rem .8rem !important; }
+  .nav-label { padding-top: 10px; }
+  .logout-link {
+    display: none;
+    margin: 8px 0 0;
+    padding: .7rem .8rem;
+  }
+  .sidebar.mobile-open .logout-link { display: flex; }
+  .sidebar:after { display: none; }
+
+  .main { width: 100%; padding: 20px 12px 28px; }
+  .mobile-brand { margin-bottom: 14px; }
+  .page-hero { display: block; margin-bottom: 18px; }
+  .page-hero h2 { font-size: clamp(1.65rem, 7vw, 2rem); line-height: 1.15; }
+  .page-hero p { font-size: .84rem; }
+  .hero-chip { white-space: normal; max-width: 100%; }
+
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .card-stat { padding: .78rem .75rem; border-radius: 14px; }
+  .card-stat .value { font-size: 1.05rem; overflow-wrap: anywhere; }
+  .card-stat .label { font-size: .62rem; }
+
+  .panel { padding: 16px; border-radius: 16px; margin-bottom: 12px; }
+  .panel-head { display: block; margin-bottom: 16px; }
+  .panel-head > .avatar { margin-top: 12px; }
+  .panel h2 { font-size: 1.25rem; }
+  .panel .sub { font-size: .82rem; }
+
+  .form-grid { grid-template-columns: 1fr !important; gap: .72rem; }
+  .full { grid-column: 1 !important; }
+  input, select, textarea { font-size: 16px; min-height: 44px; }
+  input[type="checkbox"] { min-height: auto; width: auto !important; }
+  .toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: .65rem;
+  }
+  .toolbar .field { min-width: 0; width: 100%; }
+  .toolbar .btn, .toolbar a.btn { width: 100%; text-align: center; }
+
+  .btn { min-height: 44px; padding: .65rem .9rem; }
+  .btn-sm { min-height: 40px; }
+  .action-row { align-items: stretch; }
+  .action-row .btn { width: 100%; text-align: center; }
+
+  /* Patient forms: prevent inline fee/button controls from becoming cramped. */
+  .form-grid .full + * { min-width: 0; }
+  #fee { min-width: 0; }
+  .form-grid div > div[style*="display:flex"] { flex-wrap: wrap; }
+  .form-grid div > div[style*="display:flex"] input { flex: 1 1 150px; }
+  .form-grid div > div[style*="display:flex"] .btn { flex: 1 1 130px; }
+
+  .doctor-layout, .backup-grid, .backup-grid.secondary { grid-template-columns: 1fr; }
+  .active-doctor-card, .profile-summary, .backup-primary, .backup-status, .add-doctor { padding: 18px; }
+  .doctor-table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .doctor-table { min-width: 680px; }
+  .actions { white-space: normal; }
+  .inline-form { margin: 0 4px 4px 0; }
+
+  .backup-primary h2 { font-size: 1.4rem; }
+  .backup-grid .btn { max-width: 100%; }
+  .file-button { max-width: 100%; overflow: hidden; }
+
+  footer { margin-top: 24px; line-height: 1.6; }
+
+  /* Prevent long clinical text, procedure names, filenames and audit details
+     from forcing a horizontal page scroll. */
+  td, th { max-width: 260px; }
+  .secure-note, .summary-item { overflow-wrap: anywhere; }
+}
+
+@media (max-width: 430px) {
+  .main { padding-left: 9px; padding-right: 9px; }
+  .cards { grid-template-columns: 1fr; }
+  .page-hero h2 { font-size: 1.55rem; }
+  .panel { padding: 14px; }
+  .brand-mark b { font-size: .72rem; }
+  .brand-mark small { font-size: .64rem; }
+  .flash { padding: .65rem .75rem; font-size: .82rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+}
+/* Final mobile overflow fixes */
+@media (max-width: 720px) {
+  /* Keep inline form controls inside the available panel width */
+  .form-grid div[style*="display:flex"] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap !important;
+  }
+
+  .form-grid div[style*="display:flex"] > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Date fields must shrink instead of being clipped */
+  input[type="date"] {
+    min-width: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  /* File chooser must remain completely visible */
+  .file-button {
+    display: flex !important;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: visible !important;
+    box-sizing: border-box;
+    flex-wrap: wrap;
+  }
+
+  .file-button input[type="file"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: visible;
+  }
+
+  /* Any horizontal tab/navigation row can scroll instead of being cut off */
+  .tabs,
+  .tab-row,
+  .tabs-row {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .tabs > *,
+  .tab-row > *,
+  .tabs-row > * {
+    flex-shrink: 0;
+  }
+}
+/* Final fix for native date controls on narrow screens */
+@media (max-width: 720px) {
+  .form-grid input[type="date"],
+  .toolbar input[type="date"] {
+    display: block;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .toolbar .field {
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  .toolbar .field input[type="date"] {
+    min-inline-size: 0 !important;
+  }
+}
+/* Mobile native date-field sizing */
+@media (max-width: 720px) {
+  .toolbar .field {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0 !important;
+    max-width: 100%;
+  }
+
+  .toolbar .field input[type="date"],
+  .form-grid input[type="date"] {
+    display: block;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding-left: .55rem;
+    padding-right: .35rem;
+  }
+}

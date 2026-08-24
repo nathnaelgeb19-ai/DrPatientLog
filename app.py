@@ -2578,15 +2578,22 @@ def _process_outbox():
 
 def _scheduled_daily():
     today = datetime.now().strftime("%Y-%m-%d")
+
+    # Fetch the doctor IDs in a short-lived database connection. Do not keep
+    # a PostgreSQL connection checked out while generating reports or making
+    # Telegram network requests; those operations may take significantly
+    # longer than the database query and can exhaust the connection pool.
     with get_conn() as conn:
-        docs = _execute(conn,
+        docs = _execute(
+            conn,
             "SELECT id FROM doctors WHERE telegram_enabled=1 AND telegram_bot_token!='' AND telegram_chat_id!=''"
         ).fetchall()
-        for d in docs:
-            text = build_daily_report(d["id"], today)
-            ok, detail = try_send_for_doctor(d["id"], text)
-            if not ok:
-                queue_telegram(d["id"], text)
+
+    for d in docs:
+        text = build_daily_report(d["id"], today)
+        ok, detail = try_send_for_doctor(d["id"], text)
+        if not ok:
+            queue_telegram(d["id"], text)
 
 
 def _scheduled_monthly():

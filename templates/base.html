@@ -13,10 +13,14 @@
 {% if doctor %}
 <div class="layout">
   <aside class="sidebar">
-    <div class="brand-mark"><span>HB</span><div><b>HOLY BETHEL</b><small>Dental Clinic</small></div></div>
+    <div class="brand-mark">
+      <span>HB</span>
+      <div><b>HOLY BETHEL</b><small>Dental Clinic</small></div>
+      <button class="mobile-menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="primary-navigation">☰</button>
+    </div>
     <div class="clinic-divider"></div>
     <div class="signed-user"><span class="avatar side-avatar">{{ doctor.name[:1]|upper }}</span><div><small>Signed in</small><strong>{{ doctor.name }}</strong></div></div>
-    <nav>
+    <nav id="primary-navigation">
       <div class="nav-label">WORKSPACE</div>
       <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}"><span>⌂</span>{{ t('nav_dash') }}</a>
       <a href="{{ url_for('patient_new') }}" class="{% if request.endpoint == 'patient_new' %}active{% endif %}"><span>＋</span>{{ t('nav_new') }}</a>
@@ -53,6 +57,29 @@ document.addEventListener('DOMContentLoaded', function () {
       form.appendChild(input);
     }
   });
+
+  const sidebar = document.querySelector('.sidebar');
+  const menuButton = document.querySelector('.mobile-menu-toggle');
+  const nav = document.getElementById('primary-navigation');
+  if (sidebar && menuButton && nav) {
+    menuButton.addEventListener('click', function () {
+      const open = sidebar.classList.toggle('mobile-open');
+      menuButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+      menuButton.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+      menuButton.textContent = open ? '×' : '☰';
+    });
+
+    nav.querySelectorAll('a').forEach(function(link) {
+      link.addEventListener('click', function () {
+        if (window.matchMedia('(max-width: 720px)').matches) {
+          sidebar.classList.remove('mobile-open');
+          menuButton.setAttribute('aria-expanded', 'false');
+          menuButton.setAttribute('aria-label', 'Open navigation');
+          menuButton.textContent = '☰';
+        }
+      });
+    });
+  }
 });
 </script>
 </body>
