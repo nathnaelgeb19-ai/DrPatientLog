@@ -21,7 +21,7 @@ if DB_BACKEND == "postgresql":
     pg_pool = ConnectionPool(
         conninfo=DATABASE_URL,
         min_size=1,
-        max_size=4,
+        max_size=8,
         kwargs={
             "row_factory": dict_row,
         },

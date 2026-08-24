@@ -11,6 +11,7 @@ from functools import wraps
 import os
 import csv
 import io
+import threading
 
 from flask import (
     Flask,
@@ -71,6 +72,11 @@ def _execute(obj, query, params=()):
         query = query.replace("?", "%s")
         query = query.replace("telegram_enabled=1", "telegram_enabled=TRUE")
     return obj.execute(query, params) if params else obj.execute(query)
+
+# Prevent scheduled backup/report jobs from running concurrently within the
+# single Gunicorn worker. This is especially important when daily report and
+# automatic backup are both scheduled for the same time.
+_scheduled_job_lock = threading.Lock()
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -1157,9 +1163,9 @@ def cron_automatic_backup():
     """
     Secure endpoint for Render/cron-job.org automatic backup.
 
-    The external cron calls this endpoint every minute.
-    The application decides when the configured backup time has been reached
-    and prevents duplicate backups on the same Gregorian calendar day.
+    cron-job.org calls this endpoint at the configured schedule.
+    The application still checks the configured time and prevents duplicate
+    backups on the same Gregorian calendar day.
     """
     import hmac
     from zoneinfo import ZoneInfo
@@ -1253,23 +1259,38 @@ def cron_automatic_backup():
                 "backup_date": today
             }), 200
 
-        # Configured time has been reached. Run the existing backup system.
-        ok, message = _run_automatic_backup()
+        # Serialize scheduled jobs so the backup cannot run concurrently with
+        # the daily/monthly report when they share the same scheduled time.
+        with _scheduled_job_lock:
+            # Re-check after acquiring the lock in case another request
+            # completed the backup while this request was waiting.
+            last_backup_date = (
+                get_setting("automatic_backup_last_date", "") or ""
+            ).strip()
+            if last_backup_date == today:
+                return jsonify({
+                    "ok": True,
+                    "skipped": True,
+                    "reason": "Automatic backup already completed today.",
+                    "current_time": current_time,
+                    "configured_time": configured_time,
+                    "backup_date": today
+                }), 200
 
-        if not ok:
-            return jsonify({
-                "ok": False,
-                "message": message,
-                "current_time": current_time,
-                "configured_time": configured_time,
-                "timestamp": now.isoformat(timespec="seconds")
-            }), 500
+            # Configured time has been reached. Run the existing backup system.
+            ok, message = _run_automatic_backup()
 
-        # Record only after the backup completed successfully.
-        set_setting(
-            "automatic_backup_last_date",
-            today
-        )
+            if not ok:
+                return jsonify({
+                    "ok": False,
+                    "message": message,
+                    "current_time": current_time,
+                    "configured_time": configured_time,
+                    "timestamp": now.isoformat(timespec="seconds")
+                }), 500
+
+            # Record only after the backup completed successfully.
+            set_setting("automatic_backup_last_date", today)
         return jsonify({
             "ok": True,
             "message": message,
@@ -1290,10 +1311,9 @@ def cron_daily_report():
     """
     Secure endpoint for Render Daily Telegram Report Cron Job.
 
-    Render calls this endpoint every minute. The report is sent once per
-    Ethiopian calendar day when the configured report time has been reached.
-    This avoids missing the report because a Cron invocation arrives a
-    minute or two after the configured time.
+    cron-job.org calls this endpoint at the configured schedule. The report
+    is sent once per Ethiopian calendar day when the configured report time
+    has been reached.
     """
     import hmac
     from zoneinfo import ZoneInfo
@@ -1390,15 +1410,28 @@ def cron_daily_report():
                 "report_date": today
             }), 200
 
-        # The configured time has been reached. Send the report now.
-        _scheduled_daily()
+        # Serialize this with automatic backup/monthly report and re-check
+        # the last-run marker after acquiring the lock.
+        with _scheduled_job_lock:
+            last_report_date = (
+                get_setting("telegram_last_daily_report_date", "") or ""
+            ).strip()
+            if last_report_date == today:
+                return jsonify({
+                    "ok": True,
+                    "skipped": True,
+                    "reason": "Daily report already sent today.",
+                    "current_time": current_time,
+                    "configured_time": configured_time,
+                    "report_date": today
+                }), 200
 
-        # Record the successful execution only after _scheduled_daily()
-        # completes without raising an exception.
-        set_setting(
-            "telegram_last_daily_report_date",
-            today
-        )
+            # The configured time has been reached. Send the report now.
+            _scheduled_daily()
+
+            # Record the successful execution only after _scheduled_daily()
+            # completes without raising an exception.
+            set_setting("telegram_last_daily_report_date", today)
 
         return jsonify({
             "ok": True,
@@ -1422,9 +1455,9 @@ def cron_monthly_report():
     """
     Secure endpoint for Render Monthly Telegram Report Cron Job.
 
-    Render calls this endpoint every minute. The report is sent once on
-    Ethiopian month-end after the configured report time has been reached.
-    This prevents missed reports when a Cron invocation is delayed.
+    cron-job.org calls this endpoint at the configured schedule. The report
+    is sent once on Ethiopian month-end after the configured report time has
+    been reached.
     """
     import hmac
     from zoneinfo import ZoneInfo
@@ -1527,14 +1560,27 @@ def cron_monthly_report():
                 "configured_time": configured_time
             }), 200
 
-        # Send the monthly report.
-        _scheduled_monthly()
+        # Serialize this with automatic backup/daily report and re-check the
+        # last-run marker after acquiring the lock.
+        with _scheduled_job_lock:
+            last_report_date = (
+                get_setting("telegram_last_monthly_report_date", "") or ""
+            ).strip()
+            if last_report_date == today:
+                return jsonify({
+                    "ok": True,
+                    "skipped": True,
+                    "reason": "Monthly report already sent today.",
+                    "report_date": today,
+                    "current_time": current_time,
+                    "configured_time": configured_time
+                }), 200
 
-        # Record only after successful execution.
-        set_setting(
-            "telegram_last_monthly_report_date",
-            today
-        )
+            # Send the monthly report.
+            _scheduled_monthly()
+
+            # Record only after successful execution.
+            set_setting("telegram_last_monthly_report_date", today)
 
         return jsonify({
             "ok": True,
