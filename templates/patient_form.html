@@ -7,7 +7,7 @@
   <form method="post" class="form-grid">
     <div>
       <label>Gregorian date</label>
-      <input type="date" name="greg_date" id="greg" value="{{ record.greg_date if record else greg }}" required>
+      <input type="date" name="greg_date" id="greg" class="mobile-date" value="{{ record.greg_date if record else greg }}" required>
     </div>
     <div>
       <label>Ethiopian date (auto)</label>

@@ -6,8 +6,8 @@
 <div class="panel">
   <form class="toolbar" method="get">
     <div class="field"><label>Search</label><input name="q" value="{{ q }}" placeholder="Name, ticket, procedure"></div>
-    <div class="field"><label>From</label><input type="date" name="from" value="{{ date_from }}"></div>
-    <div class="field"><label>To</label><input type="date" name="to" value="{{ date_to }}"></div>
+    <div class="field"><label>From</label><input type="date" name="from" class="mobile-date" value="{{ date_from }}"></div>
+    <div class="field"><label>To</label><input type="date" name="to" class="mobile-date" value="{{ date_to }}"></div>
     <button class="btn btn-steel" type="submit">Filter</button>
     <a class="btn btn-ghost" href="{{ url_for('patients_export_csv') }}">Export CSV</a>
     <a class="btn btn-primary" href="{{ url_for('patient_new') }}">+ New</a>
