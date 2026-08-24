@@ -3,6 +3,8 @@
 import sqlite3
 import secrets
 import hashlib
+import threading
+import time as _time
 from contextlib import contextmanager
 
 from config import (
@@ -12,30 +14,35 @@ from config import (
     DEFAULT_DOCTOR_NAME,
 )
 
+# In-memory cache for settings to avoid a DB round-trip on every request
+# (context_processor calls get_setting for ui_language on every template).
+_settings_cache = {}
+_settings_lock = threading.Lock()
+
 
 if DB_BACKEND == "postgresql":
     import psycopg
     from psycopg.rows import dict_row
-    from psycopg_pool import ConnectionPool
+    from psycopg_pool import ConnectionPool, PoolTimeout
 
     pg_pool = ConnectionPool(
         conninfo=DATABASE_URL,
         min_size=1,
-        max_size=8,
+        max_size=10,
         # Validate every connection before handing it to the app.
         # This discards connections Neon has silently closed (autosuspend)
         # instead of letting the app crash into psycopg.OperationalError.
         check=ConnectionPool.check_connection,
         # Recycle idle connections before Neon's own autosuspend timer
         # (typically ~5 min) can kill them out from under the pool.
-        max_idle=180,
+        max_idle=120,
         # Give Neon time to wake its compute back up from suspend before
         # giving up on a getconn() call (default cold start is a few sec,
         # but can spike higher on the free tier).
-        timeout=45,
+        timeout=60,
         kwargs={
             "row_factory": dict_row,
-            "connect_timeout": 15,
+            "connect_timeout": 20,
         },
         open=True,
     )
@@ -60,10 +67,9 @@ def get_conn():
     """
 
     if DB_BACKEND == "postgresql":
-        import time as _time
-
         last_err = None
-        for attempt in range(3):
+        # Retry on transient Neon/pool issues (suspend wake-up, brief exhaustion).
+        for attempt in range(4):
             try:
                 with pg_pool.connection() as conn:
                     try:
@@ -75,10 +81,10 @@ def get_conn():
                         conn.rollback()
                         raise
                 return
-            except psycopg.OperationalError as e:
-                # Neon likely suspended/closed the connection between the
-                # health check and use. Drop the bad connection and retry
-                # with a short backoff instead of surfacing a 500.
+            except (psycopg.OperationalError, PoolTimeout) as e:
+                # Neon likely suspended/closed the connection, or the pool
+                # was briefly exhausted while the compute was waking.
+                # Retry with backoff instead of surfacing a 500.
                 last_err = e
                 _time.sleep(1.5 * (attempt + 1))
                 continue
@@ -663,26 +669,34 @@ def mark_outbox_fail(row_id, attempts, error):
 
 
 def get_setting(key, default=""):
-    with get_conn() as conn:
-        _execute(
-            conn,
-            """
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-            """
-        )
+    """Return a settings value, using a process-local cache to avoid a DB hit
+    on every template render (inject_globals reads ui_language for every request).
+    """
+    with _settings_lock:
+        if key in _settings_cache:
+            return _settings_cache[key]
 
-        row = _execute(
-            conn,
-            "SELECT value FROM settings WHERE key=?",
-            (key,),
-        ).fetchone()
+    try:
+        with get_conn() as conn:
+            row = _execute(
+                conn,
+                "SELECT value FROM settings WHERE key=?",
+                (key,),
+            ).fetchone()
+        value = row["value"] if row and row["value"] is not None else default
+    except Exception:
+        # If the pool is temporarily unavailable, fall back to the provided
+        # default rather than 500-ing the entire request (especially the
+        # language setting used by the context processor).
+        return default
 
-    return row["value"] if row and row["value"] is not None else default
+    with _settings_lock:
+        _settings_cache[key] = value
+    return value
+
 
 def set_setting(key, value):
+    value = str(value)
     with get_conn() as conn:
         if DB_BACKEND == "postgresql":
             conn.execute(
@@ -692,14 +706,16 @@ def set_setting(key, value):
                 ON CONFLICT (key)
                 DO UPDATE SET value = EXCLUDED.value
                 """,
-                (key, str(value)),
+                (key, value),
             )
         else:
             _execute(
                 conn,
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)",
-                (key, str(value)),
+                (key, value),
             )
+    with _settings_lock:
+        _settings_cache[key] = value
 
 
 def ticket_exists(ticket, doctor_id, exclude_id=None):

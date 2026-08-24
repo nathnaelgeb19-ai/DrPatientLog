@@ -24,6 +24,7 @@ from flask import (
     jsonify,
     Response,
     make_response,
+    g,
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -133,8 +134,16 @@ def admin_required(f):
 
 
 def current_doctor():
+    """Return the logged-in doctor, cached on flask.g for the request lifetime
+    so inject_globals and view functions do not each open a separate connection.
+    """
+    if getattr(g, "_current_doctor", None) is not None or getattr(g, "_current_doctor_loaded", False):
+        return g._current_doctor
     did = session.get("doctor_id")
-    return get_doctor(did) if did else None
+    doc = get_doctor(did) if did else None
+    g._current_doctor = doc
+    g._current_doctor_loaded = True
+    return doc
 
 
 def _csrf_token():
