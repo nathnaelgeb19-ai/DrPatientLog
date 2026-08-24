@@ -23,29 +23,6 @@ _settings_lock = threading.Lock()
 if DB_BACKEND == "postgresql":
     import psycopg
     from psycopg.rows import dict_row
-    from psycopg_pool import ConnectionPool, PoolTimeout
-
-    pg_pool = ConnectionPool(
-        conninfo=DATABASE_URL,
-        min_size=1,
-        max_size=10,
-        # Validate every connection before handing it to the app.
-        # This discards connections Neon has silently closed (autosuspend)
-        # instead of letting the app crash into psycopg.OperationalError.
-        check=ConnectionPool.check_connection,
-        # Recycle idle connections before Neon's own autosuspend timer
-        # (typically ~5 min) can kill them out from under the pool.
-        max_idle=120,
-        # Give Neon time to wake its compute back up from suspend before
-        # giving up on a getconn() call (default cold start is a few sec,
-        # but can spike higher on the free tier).
-        timeout=60,
-        kwargs={
-            "row_factory": dict_row,
-            "connect_timeout": 20,
-        },
-        open=True,
-    )
 
 
 def _execute(obj, query, params=()):
@@ -64,30 +41,55 @@ def get_conn():
 
     Render:
         PostgreSQL / Neon
-    """
 
+    PostgreSQL intentionally uses one short-lived connection per context
+    instead of psycopg_pool.  The previous pool implementation could become
+    permanently exhausted on Render, causing login/dashboard requests to
+    wait 60 seconds and fail with PoolTimeout.  Flask requests already run
+    with a bounded number of Gunicorn threads, so short-lived connections
+    provide simpler and more reliable lifecycle management here.
+    """
     if DB_BACKEND == "postgresql":
         last_err = None
-        # Retry on transient Neon/pool issues (suspend wake-up, brief exhaustion).
         for attempt in range(4):
+            conn = None
             try:
-                with pg_pool.connection() as conn:
-                    try:
-                        # Explicitly select the PostgreSQL public schema.
-                        conn.execute("SET search_path TO public")
-                        yield conn
-                        conn.commit()
-                    except Exception:
-                        conn.rollback()
-                        raise
+                conn = psycopg.connect(
+                    DATABASE_URL,
+                    row_factory=dict_row,
+                    connect_timeout=20,
+                    application_name="DrPatientLog",
+                    keepalives=True,
+                    keepalives_idle=60,
+                    keepalives_interval=20,
+                    keepalives_count=3,
+                )
+                conn.execute("SET search_path TO public")
+                yield conn
+                conn.commit()
                 return
-            except (psycopg.OperationalError, PoolTimeout) as e:
-                # Neon likely suspended/closed the connection, or the pool
-                # was briefly exhausted while the compute was waking.
-                # Retry with backoff instead of surfacing a 500.
+            except psycopg.OperationalError as e:
                 last_err = e
-                _time.sleep(1.5 * (attempt + 1))
-                continue
+                if conn is not None:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                if attempt < 3:
+                    _time.sleep(1.5 * (attempt + 1))
+            except Exception:
+                if conn is not None:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                raise
+            finally:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
         raise last_err
 
     else:
