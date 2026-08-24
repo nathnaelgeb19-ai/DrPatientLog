@@ -59,7 +59,7 @@ def get_conn():
                     row_factory=dict_row,
                     connect_timeout=20,
                     application_name="DrPatientLog",
-                    keepalives=True,
+                    keepalives=1,
                     keepalives_idle=60,
                     keepalives_interval=20,
                     keepalives_count=3,
