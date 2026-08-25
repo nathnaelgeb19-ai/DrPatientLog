@@ -105,9 +105,16 @@
           </td>
           <td class="row-actions">
             {% if d.id != active_id %}
-            <form method="post">
+            <form method="post" class="switch-form">
               <input type="hidden" name="action" value="switch">
               <input type="hidden" name="doctor_id" value="{{ d.id }}">
+              <input
+                name="switch_password"
+                type="password"
+                placeholder="Password"
+                autocomplete="current-password"
+                required
+              >
               <button class="btn btn-dark btn-xs" type="submit">Switch</button>
             </form>
             <form method="post" onsubmit="return confirm('Delete this doctor? This cannot be undone.');">

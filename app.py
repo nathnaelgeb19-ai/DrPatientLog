@@ -795,14 +795,22 @@ def doctors_manage():
 
             elif action == "switch":
                 new_id = int(request.form.get("doctor_id"))
+                password = request.form.get("switch_password", "")
+
                 doc = get_doctor(new_id)
-                if doc:
-                    session["doctor_id"] = doc["id"]
-                    session["doctor_name"] = doc["name"]
-                    flash(f"Switched to {doc['name']}.", "success")
-                else:
+                if not doc:
                     raise ValueError("Doctor not found.")
 
+                if not doc.get("username"):
+                    raise ValueError("This account does not have a username.")
+
+                authenticated_doc = authenticate(doc["username"], password)
+                if not authenticated_doc or authenticated_doc["id"] != doc["id"]:
+                    raise ValueError("Incorrect password.")
+
+                session["doctor_id"] = doc["id"]
+                session["doctor_name"] = doc["name"]
+                flash(f"Switched to {doc['name']}.", "success")
             elif action == "delete":
                 delete_doctor(int(request.form.get("doctor_id")), doctor_id)
                 flash("Doctor deleted.", "info")
