@@ -163,9 +163,22 @@ def _validate_csrf():
 @app.context_processor
 def inject_globals():
     lang = get_setting("ui_language", "en") or "en"
+    # Prefer values saved in Settings; fall back to config / env defaults
+    clinic_name = get_setting("clinic_name", "") or CLINIC_NAME
+    clinic_short = get_setting("clinic_short", "") or CLINIC_NAME_SHORT
+    ui_theme = get_setting("ui_theme", "ios") or "ios"
+    ui_font = get_setting("ui_font", "figtree") or "figtree"
+    allowed_themes = {"ios", "carbon", "clinical", "blush", "soft"}
+    allowed_fonts = {"figtree", "inter", "jakarta", "nunito", "outfit", "manrope"}
+    if ui_theme not in allowed_themes:
+        ui_theme = "ios"
+    if ui_font not in allowed_fonts:
+        ui_font = "figtree"
     return {
-        "clinic_name": CLINIC_NAME,
-        "clinic_short": CLINIC_NAME_SHORT,
+        "clinic_name": clinic_name,
+        "clinic_short": clinic_short,
+        "ui_theme": ui_theme,
+        "ui_font": ui_font,
         "doctor": current_doctor(),
         "presets": list(PROCEDURE_PRESETS.keys()),
         "lang": lang,
@@ -983,6 +996,10 @@ def doctors_settings():
         doc=get_doctor(doctor_id),
         block_dup=get_setting("block_duplicate_tickets", "0") == "1",
         ui_lang=get_setting("ui_language", "en"),
+        settings_clinic_name=get_setting("clinic_name", "") or CLINIC_NAME,
+        settings_clinic_short=get_setting("clinic_short", "") or CLINIC_NAME_SHORT,
+        settings_theme=get_setting("ui_theme", "ios") or "ios",
+        settings_font=get_setting("ui_font", "figtree") or "figtree",
     )
 
 
@@ -998,6 +1015,24 @@ def app_settings_save():
     if lang not in ("en", "am"):
         lang = "en"
     set_setting("ui_language", lang)
+    # Clinic branding
+    name = (request.form.get("clinic_name") or "").strip()
+    short = (request.form.get("clinic_short") or "").strip()
+    if name:
+        set_setting("clinic_name", name)
+    if short:
+        set_setting("clinic_short", short)
+    # Theme & font
+    theme = (request.form.get("ui_theme") or "ios").strip().lower()
+    font = (request.form.get("ui_font") or "figtree").strip().lower()
+    allowed_themes = {"ios", "carbon", "clinical", "blush", "soft"}
+    allowed_fonts = {"figtree", "inter", "jakarta", "nunito", "outfit", "manrope"}
+    if theme not in allowed_themes:
+        theme = "ios"
+    if font not in allowed_fonts:
+        font = "figtree"
+    set_setting("ui_theme", theme)
+    set_setting("ui_font", font)
     flash("App settings saved", "success")
     return redirect(url_for("doctors_settings"))
 

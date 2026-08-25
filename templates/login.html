@@ -1,20 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Login · {{ clinic_name }}{% endblock %}
 {% block auth %}
-<div class="login-wrap">
-  <div class="login-card">
-    <div style="color:var(--bronze);font-size:0.7rem;font-weight:700;letter-spacing:0.1em;">HOLY BETHEL</div>
+<div class="gate">
+  <div class="gate-card">
+    <p class="kicker">{{ clinic_short or clinic_name }}</p>
     <h1>{{ clinic_name }}</h1>
-    <p style="color:var(--muted);margin-top:0;">Sign in to the clinic workspace</p>
+    <p class="lede">Sign in to the practice workspace</p>
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for cat, msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+      {% for cat, msg in messages %}<div class="toast toast-{{ cat }}">{{ msg }}</div>{% endfor %}
     {% endwith %}
-    <form method="post" style="margin-top:1.25rem;">
-      <div style="margin-bottom:0.85rem;"><label>Username</label><input name="username" required autocomplete="username" placeholder="Username"></div>
-      <div style="margin-bottom:1.25rem;"><label>Password</label><input type="password" name="password" required autocomplete="current-password"></div>
-      <button class="btn btn-primary" type="submit" style="width:100%;">Sign in</button>
+    <form method="post">
+      <div class="field">
+        <label>Username</label>
+        <input name="username" required autocomplete="username" placeholder="Username">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required autocomplete="current-password">
+      </div>
+      <button class="btn btn-main btn-block" type="submit">Sign in</button>
     </form>
-    <p style="margin-top:1rem;font-size:0.9rem;"><a href="{{ url_for('forgot_password') }}">Forgot password?</a></p>
+    <p class="gate-link"><a href="{{ url_for('forgot_password') }}">Forgot password?</a></p>
   </div>
 </div>
 {% endblock %}

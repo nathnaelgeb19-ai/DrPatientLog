@@ -6,43 +6,69 @@
   <title>{% block title %}{{ clinic_name }}{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body class="theme-{{ ui_theme or 'ios' }} font-{{ ui_font or 'figtree' }}">
 {% if doctor %}
-<div class="layout">
-  <aside class="sidebar">
-    <div class="brand-mark">
-      <span>HB</span>
-      <div><b>HOLY BETHEL</b><small>Dental Clinic</small></div>
-      <button class="mobile-menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="primary-navigation">☰</button>
+<div class="app">
+  <aside class="rail" id="rail">
+    <div class="rail-top">
+      <div class="brand">
+        <div class="brand-badge">{{ (clinic_short or clinic_name or 'CL')[:2]|upper }}</div>
+        <div class="brand-meta">
+          <strong>{{ clinic_short or clinic_name }}</strong>
+          <span>Practice workspace</span>
+        </div>
+      </div>
+      <button type="button" class="rail-toggle" id="railToggle" aria-label="Menu" aria-expanded="false" aria-controls="railNav">☰</button>
     </div>
-    <div class="clinic-divider"></div>
-    <div class="signed-user"><span class="avatar side-avatar">{{ doctor.name[:1]|upper }}</span><div><small>Signed in</small><strong>{{ doctor.name }}</strong></div></div>
-    <nav id="primary-navigation">
-      <div class="nav-label">WORKSPACE</div>
-      <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}"><span>⌂</span>{{ t('nav_dash') }}</a>
-      <a href="{{ url_for('patient_new') }}" class="{% if request.endpoint == 'patient_new' %}active{% endif %}"><span>＋</span>{{ t('nav_new') }}</a>
-      <a href="{{ url_for('patients') }}" class="{% if request.endpoint == 'patients' %}active{% endif %}"><span>◷</span>{{ t('nav_history') }}</a>
-      <a href="{{ url_for('monthly') }}" class="{% if request.endpoint == 'monthly' %}active{% endif %}"><span>▦</span>{{ t('nav_monthly') }}</a>
-      <div class="nav-label">CLINIC</div>
-      <a href="{{ url_for('telegram_settings') }}" class="{% if request.endpoint == 'telegram_settings' %}active{% endif %}"><span>✦</span>{{ t('nav_telegram') }}</a>
-      <a href="{{ url_for('doctors_manage') }}" class="{% if request.endpoint == 'doctors_manage' %}active{% endif %}"><span>♙</span>{{ t('nav_doctors') }}</a>
-      <a href="{{ url_for('doctors_settings') }}" class="{% if request.endpoint == 'doctors_settings' %}active{% endif %}"><span>⚙</span>{{ t('nav_settings') }}</a>
-      <a href="{{ url_for('backup_page') }}" class="{% if request.endpoint == 'backup_page' %}active{% endif %}"><span>↧</span>{{ t('nav_backup') }}</a>
-      <a href="{{ url_for('audit') }}" class="{% if request.endpoint == 'audit' %}active{% endif %}"><span>≡</span>{{ t('nav_audit') }}</a>
+
+    <div class="who">
+      <div class="who-avatar">{{ doctor.name[:1]|upper }}</div>
+      <div>
+        <small>Signed in</small>
+        <b>{{ doctor.name }}</b>
+      </div>
+    </div>
+
+    <nav class="rail-nav" id="railNav">
+      <p class="rail-section">Workspace</p>
+      <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}is-on{% endif %}"><i>⌂</i>{{ t('nav_dash') }}</a>
+      <a href="{{ url_for('patient_new') }}" class="{% if request.endpoint == 'patient_new' %}is-on{% endif %}"><i>＋</i>{{ t('nav_new') }}</a>
+      <a href="{{ url_for('patients') }}" class="{% if request.endpoint == 'patients' %}is-on{% endif %}"><i>◷</i>{{ t('nav_history') }}</a>
+      <a href="{{ url_for('monthly') }}" class="{% if request.endpoint == 'monthly' %}is-on{% endif %}"><i>▦</i>{{ t('nav_monthly') }}</a>
+
+      <p class="rail-section">Clinic</p>
+      <a href="{{ url_for('telegram_settings') }}" class="{% if request.endpoint == 'telegram_settings' %}is-on{% endif %}"><i>✦</i>{{ t('nav_telegram') }}</a>
+      <a href="{{ url_for('doctors_manage') }}" class="{% if request.endpoint == 'doctors_manage' %}is-on{% endif %}"><i>♙</i>{{ t('nav_doctors') }}</a>
+      <a href="{{ url_for('doctors_settings') }}" class="{% if request.endpoint == 'doctors_settings' %}is-on{% endif %}"><i>⚙</i>{{ t('nav_settings') }}</a>
+      <a href="{{ url_for('backup_page') }}" class="{% if request.endpoint == 'backup_page' %}is-on{% endif %}"><i>↧</i>{{ t('nav_backup') }}</a>
+      <a href="{{ url_for('audit') }}" class="{% if request.endpoint == 'audit' %}is-on{% endif %}"><i>≡</i>{{ t('nav_audit') }}</a>
     </nav>
-    <a class="logout-link" href="{{ url_for('logout') }}"><span>↪</span>{{ t('nav_logout') }}</a>
+
+    <a class="rail-out" href="{{ url_for('logout') }}"><i>↪</i>{{ t('nav_logout') }}</a>
   </aside>
-  <main class="main">
-    <div class="mobile-brand"><strong>HOLY BETHEL</strong><span>Dental Clinic</span></div>
+
+  <div class="stage">
+    <div class="stage-mobile-bar">
+      <strong>{{ clinic_short or clinic_name }}</strong>
+      <span>Practice workspace</span>
+    </div>
+
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for cat, msg in messages %}<div class="flash {{ cat }}"><span>{% if cat=='success' %}✓{% elif cat=='error' %}!{% else %}i{% endif %}</span>{{ msg }}</div>{% endfor %}
+      {% for cat, msg in messages %}
+        <div class="toast toast-{{ cat }}">
+          <span>{% if cat=='success' %}✓{% elif cat=='error' %}!{% else %}i{% endif %}</span>
+          {{ msg }}
+        </div>
+      {% endfor %}
     {% endwith %}
+
     {% block content %}{% endblock %}
-    <footer>HOLY BETHEL DENTAL CLINIC <span>•</span> Clinical Practice Management</footer>
-  </main>
+
+    <footer class="stage-foot">{{ clinic_name }} · Practice management</footer>
+  </div>
 </div>
 {% else %}
   {% block auth %}{% endblock %}
@@ -58,24 +84,21 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  const sidebar = document.querySelector('.sidebar');
-  const menuButton = document.querySelector('.mobile-menu-toggle');
-  const nav = document.getElementById('primary-navigation');
-  if (sidebar && menuButton && nav) {
-    menuButton.addEventListener('click', function () {
-      const open = sidebar.classList.toggle('mobile-open');
-      menuButton.setAttribute('aria-expanded', open ? 'true' : 'false');
-      menuButton.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
-      menuButton.textContent = open ? '×' : '☰';
+  const rail = document.getElementById('rail');
+  const toggle = document.getElementById('railToggle');
+  const nav = document.getElementById('railNav');
+  if (rail && toggle && nav) {
+    toggle.addEventListener('click', function () {
+      const open = rail.classList.toggle('is-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.textContent = open ? '×' : '☰';
     });
-
     nav.querySelectorAll('a').forEach(function(link) {
       link.addEventListener('click', function () {
-        if (window.matchMedia('(max-width: 720px)').matches) {
-          sidebar.classList.remove('mobile-open');
-          menuButton.setAttribute('aria-expanded', 'false');
-          menuButton.setAttribute('aria-label', 'Open navigation');
-          menuButton.textContent = '☰';
+        if (window.matchMedia('(max-width: 760px)').matches) {
+          rail.classList.remove('is-open');
+          toggle.setAttribute('aria-expanded', 'false');
+          toggle.textContent = '☰';
         }
       });
     });

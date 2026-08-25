@@ -1,33 +1,48 @@
 {% extends "base.html" %}
 {% block title %}Monthly · {{ clinic_name }}{% endblock %}
 {% block content %}
-<p style="color:var(--bronze);font-size:0.75rem;font-weight:700;letter-spacing:0.08em;margin:0;">REPORTS</p>
-<h2 style="font-family:Georgia,serif;margin:0.2rem 0 1rem;">Monthly income</h2>
-<div class="panel">
-  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem;">
-    <form method="post" action="{{ url_for('monthly_send') }}">
-      <button class="btn btn-steel" type="submit">Send current month to Telegram</button>
-    </form>
-    <a class="btn btn-primary" href="{{ url_for('monthly_report_html') }}" target="_blank">Open HTML report</a>
+<header class="page-head">
+  <div>
+    <p class="kicker">Reports</p>
+    <h1>Monthly income</h1>
+    <p class="lede">Ethiopian-month summaries and take-home calculations</p>
   </div>
-  <table>
-    <thead>
-      <tr><th>Ethiopian month</th><th>Patients</th><th>Income</th><th>Your cut</th><th>Base salary</th><th>Take-home</th></tr>
-    </thead>
-    <tbody>
-      {% for m in months %}
-      <tr>
-        <td><strong>{{ m.label }}</strong></td>
-        <td>{{ m.count }}</td>
-        <td>{{ "%.2f"|format(m.income) }} ETB</td>
-        <td>{{ "%.2f"|format(m.cut) }} ETB</td>
-        <td>{{ "%.2f"|format(m.base) }} ETB</td>
-        <td><strong>{{ "%.2f"|format(m.take) }} ETB</strong></td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6" style="text-align:center;color:var(--muted);">No months yet</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+</header>
+
+<section class="surface">
+  <div class="actions" style="margin-bottom:14px;">
+    <form method="post" action="{{ url_for('monthly_send') }}">
+      <button class="btn btn-dark" type="submit">Send current month to Telegram</button>
+    </form>
+    <a class="btn btn-main" href="{{ url_for('monthly_report_html') }}" target="_blank">Open HTML report</a>
+  </div>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Ethiopian month</th>
+          <th>Patients</th>
+          <th>Income</th>
+          <th>Your cut</th>
+          <th>Base salary</th>
+          <th>Take-home</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in months %}
+        <tr>
+          <td><b>{{ m.label }}</b></td>
+          <td>{{ m.count }}</td>
+          <td>{{ "%.2f"|format(m.income) }} ETB</td>
+          <td>{{ "%.2f"|format(m.cut) }} ETB</td>
+          <td>{{ "%.2f"|format(m.base) }} ETB</td>
+          <td><b>{{ "%.2f"|format(m.take) }} ETB</b></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="empty">No months yet</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

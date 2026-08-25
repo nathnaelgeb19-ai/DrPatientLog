@@ -1,27 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Doctors · {{ clinic_name }}{% endblock %}
 {% block content %}
-<section class="page-hero">
+<header class="page-head row">
   <div>
-    <div class="eyebrow">CLINIC TEAM</div>
-    <h2>Doctors</h2>
-    <p>Manage your clinical team, keep the active doctor's details current, and control access securely.</p>
+    <p class="kicker">Clinic team</p>
+    <h1>Doctors</h1>
+    <p class="lede">Manage your team, keep the active profile current, and control access.</p>
   </div>
-  <div class="hero-chip"><span class="status-dot"></span> {{ doctors|length }} doctor{% if doctors|length != 1 %}s{% endif %} registered</div>
-</section>
+  <div class="chip"><span class="dot"></span> {{ doctors|length }} doctor{% if doctors|length != 1 %}s{% endif %} registered</div>
+</header>
 
-<div class="doctor-layout">
-  <section class="panel premium-card active-doctor-card">
-    <div class="panel-head">
+<div class="split-layout">
+  <section class="surface">
+    <div class="surface-head">
       <div>
-        <div class="eyebrow muted-eyebrow">ACTIVE PROFILE</div>
+        <p class="kicker muted">Active profile</p>
         <h2>{{ active_doc.name }}</h2>
-        <p class="sub">This is the doctor currently signed in. Changes are saved immediately to the clinic database.</p>
+        <p class="hint">Currently signed in. Changes save to the clinic database.</p>
       </div>
-      <div class="avatar">{{ active_doc.name[:1]|upper }}</div>
+      <div class="who-avatar lg">{{ active_doc.name[:1]|upper }}</div>
     </div>
-
-    <form method="post" class="form-grid polished-form">
+    <form method="post" class="grid-2">
       <input type="hidden" name="action" value="edit_active">
       <div>
         <label>Doctor name</label>
@@ -43,58 +42,82 @@
         <label>Recovery email</label>
         <input name="email" type="email" value="{{ active_doc.email or '' }}" autocomplete="email" placeholder="doctor@example.com">
       </div>
-      <div class="full">
-        <label>New password <span class="optional">Leave blank to keep current password</span></label>
-        <input name="password" type="password" minlength="8" placeholder="Enter a new password only if you want to change it" autocomplete="new-password">
+      <div class="span-2">
+        <label>New password <span class="opt">Leave blank to keep current</span></label>
+        <input name="password" type="password" minlength="8" placeholder="Only if changing" autocomplete="new-password">
       </div>
-      <div class="full action-row">
-        <button class="btn btn-primary btn-lg" type="submit"><span>✓</span> Save doctor information</button>
-        <a class="btn btn-ghost btn-lg" href="{{ url_for('backup_page') }}">Protect database</a>
+      <div class="span-2 actions">
+        <button class="btn btn-main" type="submit">✓ Save doctor information</button>
+        <a class="btn btn-ghost" href="{{ url_for('backup_page') }}">Protect database</a>
       </div>
     </form>
   </section>
 
-  <aside class="panel premium-card profile-summary">
-    <div class="eyebrow muted-eyebrow">PROFILE STATUS</div>
-    <div class="summary-item"><span>Signed in as</span><strong>{{ active_doc.username or 'No username' }}</strong></div>
-    <div class="summary-item"><span>Salary</span><strong>{{ "%.2f"|format(active_doc.base_salary or 0) }} ETB</strong></div>
-    <div class="summary-item"><span>Birth year</span><strong>{{ active_doc.birth_year or 'Not set' }}</strong></div>
-    <div class="summary-item"><span>Account created</span><strong>{{ active_doc.created_at or '—' }}</strong></div>
-    <div class="secure-note"><span>🔒</span><div><strong>Secure clinic access</strong><small>Passwords are stored as one-way PBKDF2 hashes.</small></div></div>
+  <aside class="surface side-card">
+    <p class="kicker muted">Profile status</p>
+    <div class="kv"><span>Signed in as</span><b>{{ active_doc.username or 'No username' }}</b></div>
+    <div class="kv"><span>Salary</span><b>{{ "%.2f"|format(active_doc.base_salary or 0) }} ETB</b></div>
+    <div class="kv"><span>Birth year</span><b>{{ active_doc.birth_year or 'Not set' }}</b></div>
+    <div class="kv"><span>Account created</span><b>{{ active_doc.created_at or '—' }}</b></div>
+    <div class="note-ok">
+      <span>🔒</span>
+      <div><b>Secure access</b><small>Passwords stored as PBKDF2 hashes.</small></div>
+    </div>
   </aside>
 </div>
 
-<section class="panel premium-card">
-  <div class="panel-head compact">
+<section class="surface">
+  <div class="surface-head">
     <div>
-      <div class="eyebrow muted-eyebrow">TEAM DIRECTORY</div>
+      <p class="kicker muted">Team directory</p>
       <h2>All doctors</h2>
-      <p class="sub">Switch the active account or remove an unused doctor profile.</p>
+      <p class="hint">Switch the active account or remove an unused profile.</p>
     </div>
   </div>
-  <div class="doctor-table-wrap">
-    <table class="doctor-table">
-      <thead><tr><th>Doctor</th><th>Username</th><th>Base salary</th><th>Status</th><th>Actions</th></tr></thead>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Doctor</th>
+          <th>Username</th>
+          <th>Base salary</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
       <tbody>
         {% for d in doctors %}
         <tr>
-          <td><div class="doctor-name"><span class="mini-avatar">{{ d.name[:1]|upper }}</span><strong>{{ d.name }}</strong></div></td>
+          <td>
+            <div class="person">
+              <span class="mini">{{ d.name[:1]|upper }}</span>
+              <b>{{ d.name }}</b>
+            </div>
+          </td>
           <td>{{ d.username or '—' }}</td>
           <td>{{ "%.2f"|format(d.base_salary or 0) }} ETB</td>
-          <td>{% if d.id == active_id %}<span class="badge active-badge">Active</span>{% else %}<span class="badge">Available</span>{% endif %}</td>
-          <td class="actions">
+          <td>
+            {% if d.id == active_id %}
+              <span class="tag tag-ok">Active</span>
+            {% else %}
+              <span class="tag">Available</span>
+            {% endif %}
+          </td>
+          <td class="row-actions">
             {% if d.id != active_id %}
-            <form method="post" class="inline-form">
+            <form method="post">
               <input type="hidden" name="action" value="switch">
               <input type="hidden" name="doctor_id" value="{{ d.id }}">
-              <button class="btn btn-steel btn-sm" type="submit">Switch</button>
+              <button class="btn btn-dark btn-xs" type="submit">Switch</button>
             </form>
-            <form method="post" class="inline-form" onsubmit="return confirm('Delete this doctor? This cannot be undone.');">
+            <form method="post" onsubmit="return confirm('Delete this doctor? This cannot be undone.');">
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="doctor_id" value="{{ d.id }}">
-              <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+              <button class="btn btn-danger btn-xs" type="submit">Delete</button>
             </form>
-            {% else %}<span class="muted">Current account</span>{% endif %}
+            {% else %}
+              <span class="muted">Current account</span>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -103,15 +126,15 @@
   </div>
 </section>
 
-<section class="panel premium-card add-doctor">
-  <div class="panel-head compact">
+<section class="surface">
+  <div class="surface-head">
     <div>
-      <div class="eyebrow muted-eyebrow">EXPAND THE TEAM</div>
+      <p class="kicker muted">Expand the team</p>
       <h2>Add a doctor</h2>
-      <p class="sub">Create a separate login and profile without changing the active account.</p>
+      <p class="hint">Create a separate login without changing the active account.</p>
     </div>
   </div>
-  <form method="post" class="form-grid polished-form">
+  <form method="post" class="grid-2">
     <input type="hidden" name="action" value="add">
     <div><label>Doctor name</label><input name="name" required placeholder="Dr. Full Name"></div>
     <div><label>Base salary · ETB</label><input name="base_salary" type="number" step="0.01" min="0" value="45000"></div>
@@ -119,8 +142,16 @@
     <div><label>Password</label><input name="password" type="password" minlength="4" autocomplete="new-password"></div>
     <div><label>Birth year</label><input name="birth_year" type="number" min="1900" max="2100" placeholder="1990"></div>
     <div><label>Recovery email</label><input name="email" type="email" placeholder="doctor@example.com"></div>
-    <div><label>Role</label><select name="role"><option value="doctor">Doctor</option><option value="admin">Administrator</option></select></div>
-    <div class="full action-row"><button class="btn btn-primary" type="submit">＋ Add doctor</button></div>
+    <div>
+      <label>Role</label>
+      <select name="role">
+        <option value="doctor">Doctor</option>
+        <option value="admin">Administrator</option>
+      </select>
+    </div>
+    <div class="span-2 actions">
+      <button class="btn btn-main" type="submit">＋ Add doctor</button>
+    </div>
   </form>
 </section>
 {% endblock %}

@@ -1,35 +1,117 @@
 {% extends "base.html" %}
 {% block title %}Settings · {{ clinic_name }}{% endblock %}
 {% block content %}
-<p style="color:var(--bronze);font-size:0.75rem;font-weight:700;letter-spacing:0.08em;margin:0;">SETTINGS</p>
-<h2 style="font-family:Georgia,serif;margin:0.2rem 0 1rem;">Settings</h2>
+<header class="page-head">
+  <div>
+    <p class="kicker">Preferences</p>
+    <h1>Settings</h1>
+    <p class="lede">Profile, login, clinic branding, theme, font, and options</p>
+  </div>
+</header>
 
-<div class="panel">
+<section class="surface">
   <h2>Profile</h2>
-  <form method="post" class="form-grid">
+  <p class="hint">Personal details used across the clinic.</p>
+  <form method="post" class="grid-2">
     <input type="hidden" name="action" value="profile">
-    <div><label>Name</label><input name="name" value="{{ doc.name }}"></div>
-    <div><label>Base salary (ETB)</label><input name="base_salary" type="number" step="0.01" value="{{ doc.base_salary }}"></div>
-    <div><label>Birth year (password recovery)</label><input name="birth_year" type="number" value="{{ doc.birth_year or '' }}"></div>
-    <div class="full"><button class="btn btn-primary" type="submit">Save profile</button></div>
-  <div style="margin-bottom:.8rem"><label>Recovery email</label><input type="email" name="email" value="{{ doc.email or '' }}" autocomplete="email" placeholder="doctor@example.com"></div></form>
-</div>
-
-<div class="panel">
-  <h2>Login credentials</h2>
-  <form method="post" class="form-grid">
-    <input type="hidden" name="action" value="password">
-    <div><label>Username</label><input name="username" value="{{ doc.username or '' }}"></div>
-    <div><label>New password (leave blank to keep)</label><input name="password" type="password"></div>
-    <div class="full"><button class="btn btn-steel" type="submit">Update login</button></div>
+    <div>
+      <label>Name</label>
+      <input name="name" value="{{ doc.name }}">
+    </div>
+    <div>
+      <label>Base salary (ETB)</label>
+      <input name="base_salary" type="number" step="0.01" value="{{ doc.base_salary }}">
+    </div>
+    <div>
+      <label>Birth year (password recovery)</label>
+      <input name="birth_year" type="number" value="{{ doc.birth_year or '' }}">
+    </div>
+    <div>
+      <label>Recovery email</label>
+      <input type="email" name="email" value="{{ doc.email or '' }}" autocomplete="email" placeholder="doctor@example.com">
+    </div>
+    <div class="span-2">
+      <button class="btn btn-main" type="submit">Save profile</button>
+    </div>
   </form>
-</div>
+</section>
 
-<div class="panel">
-  <h2>App options</h2>
-  <form method="post" action="{{ url_for('app_settings_save') }}" class="form-grid">
-    <div class="full">
-      <label style="text-transform:none;font-size:0.95rem;">
+<section class="surface">
+  <h2>Login credentials</h2>
+  <p class="hint">Change username or password for this account.</p>
+  <form method="post" class="grid-2">
+    <input type="hidden" name="action" value="password">
+    <div>
+      <label>Username</label>
+      <input name="username" value="{{ doc.username or '' }}">
+    </div>
+    <div>
+      <label>New password (leave blank to keep)</label>
+      <input name="password" type="password">
+    </div>
+    <div class="span-2">
+      <button class="btn btn-dark" type="submit">Update login</button>
+    </div>
+  </form>
+</section>
+
+<section class="surface">
+  <h2>Clinic branding</h2>
+  <p class="hint">Shown in the sidebar, page titles, and footer.</p>
+  <form method="post" action="{{ url_for('app_settings_save') }}" class="grid-2" id="app-options-form">
+    <div>
+      <label>Clinic name</label>
+      <input name="clinic_name" value="{{ settings_clinic_name }}" placeholder="e.g. Sunrise Dental Clinic" required>
+    </div>
+    <div>
+      <label>Short name</label>
+      <input name="clinic_short" value="{{ settings_clinic_short }}" placeholder="e.g. Sunrise" required>
+    </div>
+
+    <div class="span-2">
+      <label>Theme</label>
+      <p class="hint" style="margin-top:-4px;">Five full design systems. Each changes corners, depth, spacing, sidebar, and chrome — not only colors.</p>
+      <div class="theme-picker">
+        {% set themes = [
+          ('ios', 'iOS', 'Rounded · soft depth · airy', 'linear-gradient(135deg,#5ac8fa,#007aff)'),
+          ('soft', 'Soft Clay', 'Neumorphic · gentle emboss', 'linear-gradient(135deg,#c7d2fe,#6366f1)'),
+          ('clinical', 'Clinical', 'Hospital clean · crisp teal', 'linear-gradient(135deg,#67e8f9,#0e7490)'),
+          ('blush', 'Blush', 'Light · warm rose', 'linear-gradient(135deg,#fb7185,#be123c)'),
+          ('carbon', 'Carbon', 'Technical dark · cool', 'linear-gradient(135deg,#5a6a7c,#2c3540)')
+        ] %}
+        {% for key, label, desc, grad in themes %}
+        <label class="theme-swatch {% if settings_theme == key %}is-selected{% endif %}">
+          <input type="radio" name="ui_theme" value="{{ key }}" {% if settings_theme == key %}checked{% endif %}>
+          <span class="swatch" style="background:{{ grad }}"></span>
+          <span class="swatch-label">{{ label }}<span class="swatch-sub">{{ desc }}</span></span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="span-2">
+      <label>Font</label>
+      <div class="font-picker">
+        {% set fonts = [
+          ('figtree', 'Figtree'),
+          ('inter', 'Inter'),
+          ('jakarta', 'Plus Jakarta Sans'),
+          ('nunito', 'Nunito'),
+          ('outfit', 'Outfit'),
+          ('manrope', 'Manrope')
+        ] %}
+        {% for key, label in fonts %}
+        <label class="font-option font-preview-{{ key }} {% if settings_font == key %}is-selected{% endif %}">
+          <input type="radio" name="ui_font" value="{{ key }}" {% if settings_font == key %}checked{% endif %}>
+          <span class="font-name">{{ label }}</span>
+          <span class="font-sample">Aa Bb Cc 123</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="span-2">
+      <label style="text-transform:none;font-size:0.9rem;font-weight:500;display:flex;align-items:center;gap:8px;">
         <input type="checkbox" name="block_dup" {% if block_dup %}checked{% endif %} style="width:auto;">
         {{ t('block_dup') }}
       </label>
@@ -41,7 +123,9 @@
         <option value="am" {% if ui_lang=='am' %}selected{% endif %}>አማርኛ</option>
       </select>
     </div>
-    <div class="full"><button class="btn btn-primary" type="submit">Save options</button></div>
+    <div class="span-2">
+      <button class="btn btn-main" type="submit">Save options</button>
+    </div>
   </form>
-</div>
+</section>
 {% endblock %}

@@ -1,93 +1,38 @@
-﻿{% extends "base.html" %}
-{% block title %}Recover password Â· {{ clinic_name }}{% endblock %}
-
+{% extends "base.html" %}
+{% block title %}Recover password · {{ clinic_name }}{% endblock %}
 {% block auth %}
-<div class="login-wrap">
-  <div class="login-card">
-
+<div class="gate">
+  <div class="gate-card">
+    <p class="kicker">{{ clinic_short or clinic_name }}</p>
     <h1>Recover password</h1>
-
-    <p style="color:var(--muted)">
-      Verify your account using your username, birth year,
-      and recovery email.
-    </p>
-
+    <p class="lede">Verify your account using username, birth year, and recovery email.</p>
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for cat,msg in messages %}
-        <div class="flash {{ cat }}">{{ msg }}</div>
-      {% endfor %}
+      {% for cat, msg in messages %}<div class="toast toast-{{ cat }}">{{ msg }}</div>{% endfor %}
     {% endwith %}
-
-    <form method="post" style="margin-top:1rem">
-
-      <div style="margin-bottom:1rem">
+    <form method="post">
+      <div class="field">
         <label>Username</label>
         <input name="username" required autocomplete="username">
       </div>
-
-      <div style="margin-bottom:1rem">
+      <div class="field">
         <label>Birth year</label>
-        <input
-          name="birth_year"
-          required
-          inputmode="numeric"
-          autocomplete="bday-year"
-        >
+        <input name="birth_year" required inputmode="numeric" autocomplete="bday-year">
       </div>
-
-      <div style="margin-bottom:1rem">
+      <div class="field">
         <label>Recovery email</label>
-        <input
-          type="email"
-          name="email"
-          required
-          autocomplete="email"
-        >
+        <input type="email" name="email" required autocomplete="email">
       </div>
-
-      <button
-        class="btn btn-primary"
-        type="submit"
-        style="width:100%"
-      >
-        Verify account
-      </button>
-
+      <button class="btn btn-main btn-block" type="submit">Verify account</button>
     </form>
-
     {% if reset_link %}
-    <div style="
-      margin-top:1.25rem;
-      padding:1rem;
-      border:1px solid var(--border);
-      border-radius:10px
-    ">
-
+    <div class="reset-box">
       <strong>Password reset link</strong>
-
-      <p style="color:var(--muted);font-size:.9rem">
-        This link expires in 30 minutes and can only be used once.
-      </p>
-
-      <input
-        type="text"
-        value="{{ reset_link }}"
-        readonly
-        onclick="this.select()"
-        style="width:100%;box-sizing:border-box"
-      >
-
-      <p style="margin-top:.75rem">
-        <a href="{{ reset_link }}">Open password reset page</a>
-      </p>
-
+      <p>This link expires in 30 minutes and can only be used once.</p>
+      <input type="text" value="{{ reset_link }}" readonly onclick="this.select()">
+      <p><a href="{{ reset_link }}">Open password reset page</a></p>
     </div>
     {% endif %}
-
-    <p style="margin-top:1rem">
-      <a href="{{ url_for('login') }}">Back to login</a>
-    </p>
-
+    <p class="gate-link"><a href="{{ url_for('login') }}">Back to login</a></p>
   </div>
 </div>
 {% endblock %}

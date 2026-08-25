@@ -21,11 +21,12 @@ else:
     DB_BACKEND = "sqlite"
     DB_FILE = os.path.join(DATA_DIR, "clinic_database.db")
 
-SECRET_KEY = os.environ.get("SECRET_KEY") or "change-me-holy-bethel-clinic-secret"
+SECRET_KEY = os.environ.get("SECRET_KEY") or "change-me-clinic-secret"
 
-CLINIC_NAME = "Holy Bethel Dental Clinic"
-CLINIC_NAME_SHORT = "Holy Bethel"
-DEFAULT_DOCTOR_NAME = "Dr. Nathnael Gebeyehu"
+# Clinic branding — override with environment variables or via Settings UI
+CLINIC_NAME = os.environ.get("CLINIC_NAME", "Clinic Manager")
+CLINIC_NAME_SHORT = os.environ.get("CLINIC_NAME_SHORT", "Clinic")
+DEFAULT_DOCTOR_NAME = os.environ.get("DEFAULT_DOCTOR_NAME", "Administrator")
 
 DAILY_REPORT_TIME = os.environ.get("DAILY_REPORT_TIME", "19:00")
 MONTHLY_REPORT_TIME = os.environ.get("MONTHLY_REPORT_TIME", "19:00")

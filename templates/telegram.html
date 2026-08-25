@@ -1,25 +1,51 @@
 {% extends "base.html" %}
 {% block title %}Telegram · {{ clinic_name }}{% endblock %}
 {% block content %}
-<p style="color:var(--bronze);font-size:0.75rem;font-weight:700;letter-spacing:0.08em;margin:0;">NOTIFICATIONS</p>
-<h2 style="font-family:Georgia,serif;margin:0.2rem 0 1rem;">Telegram</h2>
-<div class="panel">
-  <p class="sub">On a hosted server, reports send 24/7 while the service is running.</p>
-  <form method="post" class="form-grid">
-    <div class="full"><label>Bot token</label><input name="token" type="password" value="{{ doc.telegram_bot_token or '' }}"></div>
-    <div class="full"><label>Chat ID</label><input name="chat_id" value="{{ doc.telegram_chat_id or '' }}"></div>
-    <div><label>Daily report time (HH:MM)</label><input name="daily_time" value="{{ daily_time }}" placeholder="19:00"></div>
-    <div><label>Monthly report time (HH:MM)</label><input name="monthly_time" value="{{ monthly_time }}" placeholder="19:00"></div>
-    <div class="full">
-      <label style="text-transform:none;font-size:0.95rem;">
+<header class="page-head">
+  <div>
+    <p class="kicker">Notifications</p>
+    <h1>Telegram settings</h1>
+    <p class="lede">Configure the bot that receives daily and monthly reports</p>
+  </div>
+</header>
+
+<section class="surface">
+  <h2>Bot configuration</h2>
+  <p class="hint">Token and chat ID are stored per doctor account.</p>
+  <form method="post" class="grid-2">
+    <div class="span-2">
+      <label>Bot token</label>
+      <input name="token" value="{{ doc.telegram_bot_token or '' }}" placeholder="123456:ABC-DEF..." autocomplete="off">
+    </div>
+    <div>
+      <label>Chat ID</label>
+      <input name="chat_id" value="{{ doc.telegram_chat_id or '' }}" placeholder="-1001234567890">
+    </div>
+    <div>
+      <label style="text-transform:none;font-size:0.9rem;font-weight:500;display:flex;align-items:center;gap:8px;margin-top:1.5rem;">
         <input type="checkbox" name="enabled" {% if doc.telegram_enabled %}checked{% endif %} style="width:auto;">
-        Enable Telegram notifications
+        Enable Telegram reports
       </label>
     </div>
-    <div class="full"><button class="btn btn-primary" type="submit">Save</button></div>
+    <div>
+      <label>Daily report time</label>
+      <input type="time" name="daily_time" value="{{ daily_time }}">
+    </div>
+    <div>
+      <label>Monthly report time</label>
+      <input type="time" name="monthly_time" value="{{ monthly_time }}">
+    </div>
+    <div class="span-2 actions">
+      <button class="btn btn-main" type="submit">Save Telegram settings</button>
+    </div>
   </form>
-  <form method="post" action="{{ url_for('telegram_send_daily') }}" style="margin-top:1rem;">
-    <button class="btn btn-steel" type="submit">Send daily report now</button>
+</section>
+
+<section class="surface">
+  <h2>Send now</h2>
+  <p class="hint">Manually push today's report to Telegram.</p>
+  <form method="post" action="{{ url_for('telegram_send_daily') }}">
+    <button class="btn btn-dark" type="submit">Send daily report now</button>
   </form>
-</div>
+</section>
 {% endblock %}
