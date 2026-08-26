@@ -812,7 +812,21 @@ def doctors_manage():
                 session["doctor_name"] = doc["name"]
                 flash(f"Switched to {doc['name']}.", "success")
             elif action == "delete":
-                delete_doctor(int(request.form.get("doctor_id")), doctor_id)
+                # Require password of the doctor being deleted (same rule as switch)
+                target_id = int(request.form.get("doctor_id"))
+                password = request.form.get("delete_password", "")
+
+                doc = get_doctor(target_id)
+                if not doc:
+                    raise ValueError("Doctor not found.")
+                if not doc.get("username"):
+                    raise ValueError("This account does not have a username.")
+
+                authenticated_doc = authenticate(doc["username"], password)
+                if not authenticated_doc or int(authenticated_doc["id"]) != int(doc["id"]):
+                    raise ValueError("Incorrect password for that account. Deletion cancelled.")
+
+                delete_doctor(target_id, doctor_id)
                 flash("Doctor deleted.", "info")
         except Exception as e:
             flash(str(e), "error")

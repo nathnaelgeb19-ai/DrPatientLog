@@ -71,7 +71,7 @@
     <div>
       <p class="kicker muted">Team directory</p>
       <h2>All doctors</h2>
-      <p class="hint">Switch the active account or remove an unused profile.</p>
+      <p class="hint">Switch or delete requires that doctor's password.</p>
     </div>
   </div>
   <div class="scroll">
@@ -117,9 +117,16 @@
               >
               <button class="btn btn-dark btn-xs" type="submit">Switch</button>
             </form>
-            <form method="post" onsubmit="return confirm('Delete this doctor? This cannot be undone.');">
+            <form method="post" class="switch-form" onsubmit="return confirm('Delete this doctor permanently? This cannot be undone.');">
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="doctor_id" value="{{ d.id }}">
+              <input
+                name="delete_password"
+                type="password"
+                placeholder="Password"
+                autocomplete="current-password"
+                required
+              >
               <button class="btn btn-danger btn-xs" type="submit">Delete</button>
             </form>
             {% else %}
