@@ -271,8 +271,12 @@ input[readonly] { background: var(--bg); color: #4b5563; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .split { display: flex; gap: 8px; }
 .split input { flex: 1; min-width: 0; }
-.row-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: nowrap; }
-.row-actions form { display: inline; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; white-space: nowrap; }
+.row-actions form { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+.row-actions input[type="password"] {
+  width: 110px; min-width: 110px; max-width: 110px;
+  padding: .28rem .5rem; font-size: .8rem; min-height: 30px;
+}
 
 /* Toasts */
 .toast {

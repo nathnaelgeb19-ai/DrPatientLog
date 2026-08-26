@@ -80,7 +80,6 @@
         <tr>
           <th>Doctor</th>
           <th>Username</th>
-          <th>Base salary</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
@@ -95,7 +94,6 @@
             </div>
           </td>
           <td>{{ d.username or '—' }}</td>
-          <td>{{ "%.2f"|format(d.base_salary or 0) }} ETB</td>
           <td>
             {% if d.id == active_id %}
               <span class="tag tag-ok">Active</span>
