@@ -683,27 +683,58 @@ def monthly():
     doctor_id = session["doctor_id"]
     with get_conn() as conn:
         rows = _execute(conn,
-            "SELECT eth_date, total_fee, my_earning FROM patients WHERE doctor_id=?",
+            "SELECT eth_date, total_fee, doctor_pct, my_earning FROM patients WHERE doctor_id=?",
             (doctor_id,),
         ).fetchall()
-        doc = _execute(conn,
-            "SELECT base_salary FROM doctors WHERE id=?", (doctor_id,)
-        ).fetchone()
-    base = float(doc["base_salary"] if doc else 45000)
+        closures = _execute(
+            conn,
+            "SELECT * FROM salary_closures WHERE doctor_id=?",
+            (doctor_id,),
+        ).fetchall()
+
+    closed_map = {
+        (r["eth_month"], str(r["eth_year"])): r for r in closures
+    }
+
     months = {}
     for r in rows:
         parts = (r["eth_date"] or "").split()
         if len(parts) < 3:
             continue
-        key = (parts[0], parts[2])
-        months.setdefault(key, {"count": 0, "income": 0.0, "cut": 0.0})
+        # Normalize the Ethiopian year to an integer.  The current/previous
+        # month keys are stored as (month, int(year)); keeping patient rows
+        # in the same key format prevents duplicate rows for the current month.
+        try:
+            eth_year = int(parts[2])
+        except (TypeError, ValueError):
+            continue
+        key = (parts[0], eth_year)
+        months.setdefault(key, {"count": 0, "income": 0.0, "cut": 0.0, "pct_sum": 0.0, "pct_count": 0})
         months[key]["count"] += 1
-        months[key]["income"] += float(r["total_fee"] or 0)
-        months[key]["cut"] += float(r["my_earning"] or 0)
+        fee = float(r["total_fee"] or 0)
+        cut = float(r["my_earning"] or 0)
+        months[key]["income"] += fee
+        months[key]["cut"] += cut
+        if r["doctor_pct"] is not None:
+            months[key]["pct_sum"] += float(r["doctor_pct"])
+            months[key]["pct_count"] += 1
+
+    # Always show the current Ethiopian month, even before any patient is registered.
+    # Also show the immediately previous Ethiopian month so its salary can be
+    # explicitly marked Paid & Closed during the first days of the new month,
+    # even when that previous month has no patient rows for this doctor.
     eth = get_ethiopian_date()
     parts = eth.split()
-    if len(parts) >= 3:
-        months.setdefault((parts[0], parts[2]), {"count": 0, "income": 0.0, "cut": 0.0})
+    current_key = (parts[0], int(parts[2])) if len(parts) >= 3 and str(parts[2]).isdigit() else ("", 0)
+    if current_key[0]:
+        months.setdefault(current_key, {"count": 0, "income": 0.0, "cut": 0.0, "pct_sum": 0.0, "pct_count": 0})
+
+        current_month_index = ETH_MONTHS.index(current_key[0]) if current_key[0] in ETH_MONTHS else 0
+        if current_month_index == 0:
+            previous_key = (ETH_MONTHS[-1], current_key[1] - 1)
+        else:
+            previous_key = (ETH_MONTHS[current_month_index - 1], current_key[1])
+        months.setdefault(previous_key, {"count": 0, "income": 0.0, "cut": 0.0, "pct_sum": 0.0, "pct_count": 0})
 
     def sort_key(item):
         m, y = item[0]
@@ -719,11 +750,85 @@ def monthly():
 
     ordered = []
     for (m, y), vals in sorted(months.items(), key=sort_key, reverse=True):
+        closure = closed_map.get((m, str(y)))
+        pct = (vals["cut"] / vals["income"] * 100.0) if vals["income"] else 0.0
         ordered.append({
-            "label": f"{m} {y}", "count": vals["count"], "income": vals["income"],
-            "cut": vals["cut"], "base": base, "take": base + vals["cut"],
+            "label": f"{m} {y}",
+            "month": m,
+            "year": int(y) if str(y).isdigit() else 0,
+            "count": vals["count"],
+            "income": vals["income"],
+            "cut": vals["cut"],
+            "pct": pct,
+            "closed": bool(closure),
+            "closure": closure,
+            "is_current": (m, int(y) if str(y).isdigit() else 0) == current_key,
         })
     return render_template("monthly.html", months=ordered)
+
+
+@app.route("/monthly/pay", methods=["POST"])
+@login_required
+def monthly_pay():
+    doctor_id = session["doctor_id"]
+    month = (request.form.get("month") or "").strip()
+    year_text = (request.form.get("year") or "").strip()
+    try:
+        year = int(year_text)
+    except ValueError:
+        flash("Invalid Ethiopian month.", "error")
+        return redirect(url_for("monthly"))
+
+    if month not in ETH_MONTHS:
+        flash("Invalid Ethiopian month.", "error")
+        return redirect(url_for("monthly"))
+
+    current_parts = get_ethiopian_date().split()
+    current_key = (current_parts[0], int(current_parts[2])) if len(current_parts) >= 3 else ("", 0)
+    if (month, year) == current_key:
+        flash("The current Ethiopian month cannot be closed yet.", "error")
+        return redirect(url_for("monthly"))
+
+    with get_conn() as conn:
+        rows = _execute(
+            conn,
+            "SELECT total_fee, my_earning FROM patients WHERE doctor_id=? AND eth_date LIKE ?",
+            (doctor_id, f"{month} % {year}"),
+        ).fetchall()
+        already = _execute(
+            conn,
+            "SELECT id FROM salary_closures WHERE doctor_id=? AND eth_month=? AND eth_year=?",
+            (doctor_id, month, year),
+        ).fetchone()
+
+        if already:
+            flash(f"{month} {year} is already paid and closed.", "info")
+            return redirect(url_for("monthly"))
+
+        earned = sum(float(r["my_earning"] or 0) for r in rows)
+        paid_date = datetime.now().strftime("%Y-%m-%d")
+        paid_eth_date = get_ethiopian_date(paid_date)
+        _execute(
+            conn,
+            """
+            INSERT INTO salary_closures
+            (doctor_id, eth_month, eth_year, earned_amount, paid_date, paid_eth_date, closed_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                doctor_id, month, year, earned, paid_date, paid_eth_date,
+                session.get("doctor_name", ""),
+            ),
+        )
+
+    log_audit(
+        doctor_id,
+        session.get("doctor_name", ""),
+        "salary_paid_closed",
+        detail=f"{month} {year} - {earned:,.2f} ETB",
+    )
+    flash(f"{month} {year} salary marked paid and the month is closed.", "success")
+    return redirect(url_for("monthly"))
 
 
 @app.route("/monthly/send", methods=["POST"])
@@ -2623,11 +2728,13 @@ def monthly_report_html():
     parts = eth.split()
     m, y = (parts[0], parts[2]) if len(parts) >= 3 else ("", "")
     with get_conn() as conn:
-        rows = _execute(conn,
+        rows = _execute(
+            conn,
             "SELECT * FROM patients WHERE doctor_id=? ORDER BY id", (doctor_id,)
         ).fetchall()
-        doc = _execute(conn,
-            "SELECT name, base_salary FROM doctors WHERE id=?", (doctor_id,)
+        doc = _execute(
+            conn,
+            "SELECT name FROM doctors WHERE id=?", (doctor_id,)
         ).fetchone()
     month_rows = [
         r for r in rows
@@ -2635,12 +2742,15 @@ def monthly_report_html():
     ]
     income = sum(float(r["total_fee"] or 0) for r in month_rows)
     cut = sum(float(r["my_earning"] or 0) for r in month_rows)
-    base = float(doc["base_salary"] if doc else 45000)
-    take = base + cut
+    # Effective monthly percentage: total doctor earnings divided by total fees.
+    # This remains correct even if different treatments use different percentages.
+    pct = (cut / income * 100.0) if income else 0.0
+
     rows_html = "".join(
         f"<tr><td>{r['eth_date']}</td><td>{r['patient_name']}</td>"
         f"<td>{r['ticket_no'] or ''}</td><td>{r['procedure']}</td>"
         f"<td>{float(r['total_fee'] or 0):,.2f}</td>"
+        f"<td>{float(r['doctor_pct'] or 0):,.2f}%</td>"
         f"<td>{float(r['my_earning'] or 0):,.2f}</td></tr>"
         for r in month_rows
     )
@@ -2648,7 +2758,7 @@ def monthly_report_html():
 <title>Monthly - {m} {y}</title>
 <style>
 body{{font-family:Segoe UI,sans-serif;background:#f1f1ef;padding:24px;color:#1a1a1a}}
-.card{{max-width:900px;margin:auto;background:#fff;padding:28px;border-radius:14px;border:1px solid #e1e1df}}
+.card{{max-width:1000px;margin:auto;background:#fff;padding:28px;border-radius:14px;border:1px solid #e1e1df}}
 h1{{color:#55616c;border-bottom:3px solid #b98a3e;padding-bottom:12px}}
 .stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}}
 .stat{{background:#f7f7f5;border:1px solid #e1e1df;border-radius:10px;padding:12px}}
@@ -2658,18 +2768,18 @@ th{{background:#55616c;color:#fff;text-align:left;padding:8px}}
 td{{padding:8px;border-bottom:1px solid #e1e1df}}
 .banner{{background:linear-gradient(135deg,#b98a3e,#9c7433);color:#fff;padding:16px;border-radius:12px;text-align:center;margin-top:16px}}
 @media print{{.noprint{{display:none}}}}
+@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}}}
 </style></head><body><div class="card">
 <h1>Dental {CLINIC_NAME}</h1>
 <p>Monthly report - {m} {y} - {doc['name'] if doc else ''}</p>
 <div class="stats">
 <div class="stat">Patients<b>{len(month_rows)}</b></div>
 <div class="stat">Income<b>{income:,.2f} ETB</b></div>
-<div class="stat">Doctor cut<b>{cut:,.2f} ETB</b></div>
-<div class="stat">Base salary<b>{base:,.2f} ETB</b></div>
+<div class="stat">Doctor percentage<b>{pct:,.2f}%</b></div>
+<div class="stat">Doctor earnings<b>{cut:,.2f} ETB</b></div>
 </div>
-<div class="banner"><div>Take-home</div><strong style="font-size:1.5rem">{take:,.2f} ETB</strong></div>
-<table><thead><tr><th>Eth date</th><th>Patient</th><th>Ticket</th><th>Procedure</th><th>Fee</th><th>Cut</th></tr></thead>
-<tbody>{rows_html or '<tr><td colspan="6">No records</td></tr>'}</tbody></table>
+<table><thead><tr><th>Eth date</th><th>Patient</th><th>Ticket</th><th>Procedure</th><th>Fee</th><th>Percent</th><th>Doctor earning</th></tr></thead>
+<tbody>{rows_html or '<tr><td colspan="7">No records</td></tr>'}</tbody></table>
 <p class="noprint" style="text-align:center;margin-top:20px"><button onclick="window.print()">Print / Save PDF</button></p>
 </div></body></html>"""
     return Response(html, mimetype="text/html")

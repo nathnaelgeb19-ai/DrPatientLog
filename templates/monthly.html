@@ -1,11 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Monthly · {{ clinic_name }}{% endblock %}
 {% block content %}
+<style>
+.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#f1f1ef;border:1px solid #d8d8d5;font-size:.82rem;font-weight:600}
+.badge-success{background:#e8f5e9;border-color:#b7dfba;color:#27632a}
+</style>
 <header class="page-head">
   <div>
     <p class="kicker">Reports</p>
     <h1>Monthly income</h1>
-    <p class="lede">Ethiopian-month summaries and take-home calculations</p>
+    <p class="lede">Ethiopian-month earnings and salary payment history</p>
   </div>
 </header>
 
@@ -23,9 +27,9 @@
           <th>Ethiopian month</th>
           <th>Patients</th>
           <th>Income</th>
-          <th>Your cut</th>
-          <th>Base salary</th>
-          <th>Take-home</th>
+          <th>Doctor %</th>
+          <th>Doctor earnings</th>
+          <th>Status</th>
         </tr>
       </thead>
       <tbody>
@@ -34,12 +38,28 @@
           <td><b>{{ m.label }}</b></td>
           <td>{{ m.count }}</td>
           <td>{{ "%.2f"|format(m.income) }} ETB</td>
-          <td>{{ "%.2f"|format(m.cut) }} ETB</td>
-          <td>{{ "%.2f"|format(m.base) }} ETB</td>
-          <td><b>{{ "%.2f"|format(m.take) }} ETB</b></td>
+          <td>{{ "%.2f"|format(m.pct) }}%</td>
+          <td><b>{{ "%.2f"|format(m.cut) }} ETB</b></td>
+          <td>
+            {% if m.closed %}
+              <span class="badge badge-success">Paid &amp; Closed</span>
+              <small style="display:block;margin-top:4px;">{{ m.closure.paid_eth_date }}</small>
+            {% elif m.is_current %}
+              <span class="badge">Current month</span>
+            {% else %}
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span class="badge">Completed month</span>
+                <form method="post" action="{{ url_for('monthly_pay') }}" onsubmit="return confirm('Mark {{ m.label }} salary as paid and close this Ethiopian month?');">
+                <input type="hidden" name="month" value="{{ m.month }}">
+                <input type="hidden" name="year" value="{{ m.year }}">
+                  <button class="btn btn-main" type="submit">Paid &amp; Close Month</button>
+                </form>
+              </div>
+            {% endif %}
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="empty">No months yet</td></tr>
+        <tr><td colspan="7" class="empty">No months yet</td></tr>
         {% endfor %}
       </tbody>
     </table>
