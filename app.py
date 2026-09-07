@@ -299,6 +299,29 @@ def logout():
     return redirect(url_for("login"))
 
 
+def _get_or_create_card_number(conn, doctor_id, patient_name):
+    """Return a stable clinic card number for this patient name."""
+    row = _execute(
+        conn,
+        "SELECT card_number FROM patients WHERE doctor_id=? AND lower(patient_name)=lower(?) "
+        "AND card_number IS NOT NULL AND TRIM(card_number)!='' ORDER BY id LIMIT 1",
+        (doctor_id, patient_name),
+    ).fetchone()
+    if row and row["card_number"]:
+        return row["card_number"]
+    rows = _execute(
+        conn,
+        "SELECT card_number FROM patients WHERE doctor_id=? AND card_number LIKE 'CARD-%'",
+        (doctor_id,),
+    ).fetchall()
+    max_no = 0
+    for r in rows:
+        m = re.fullmatch(r"CARD-(\d+)", str(r["card_number"] or ""))
+        if m:
+            max_no = max(max_no, int(m.group(1)))
+    return f"CARD-{max_no + 1:06d}"
+
+
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -480,6 +503,7 @@ def patient_new():
                 return redirect(url_for("patient_new"))
         cut = fee * (pct / 100.0)
         with get_conn() as conn:
+            card_number = _get_or_create_card_number(conn, doctor_id, patient)
             if DB_BACKEND == "postgresql":
                 cur = _execute(conn,
                     """
@@ -508,7 +532,7 @@ def patient_new():
             session.get("doctor_name", ""),
             "create",
             entity_id=new_id,
-            detail=f"{patient} - {procedure} - {fee:,.2f}",
+            detail=f"{card_number} - {patient} - {procedure} - {fee:,.2f}",
         )
         try:
             msg = build_earning_message(
@@ -549,6 +573,8 @@ def patient_edit(pid):
         card_number = request.form.get("card_number", "").strip().upper()
         ticket = request.form.get("ticket_no", "").strip().upper()
         procedure = request.form.get("procedure", "").strip().title()
+        with get_conn() as conn:
+            card_number = row["card_number"] or _get_or_create_card_number(conn, doctor_id, patient)
         try:
             fee = float(request.form.get("total_fee") or 0)
             pct = float(request.form.get("doctor_pct") or 4)
@@ -569,7 +595,7 @@ def patient_edit(pid):
             )
         log_audit(
             doctor_id, session.get("doctor_name", ""), "update",
-            entity_id=pid, detail=f"{patient} - {procedure} - {fee:,.2f}",
+            entity_id=pid, detail=f"{card_number} - {patient} - {procedure} - {fee:,.2f}",
         )
         try:
             msg = build_earning_message(
@@ -593,6 +619,7 @@ def patient_edit(pid):
 def patient_delete(pid):
     doctor_id = session["doctor_id"]
     name = None
+    card_number = ""
     with get_conn() as conn:
         row = _execute(conn,
             "SELECT * FROM patients WHERE id=? AND doctor_id=?",
@@ -600,6 +627,7 @@ def patient_delete(pid):
         ).fetchone()
         if row:
             name = row["patient_name"]
+            card_number = row["card_number"] or ""
             _execute(conn,"DELETE FROM patients WHERE id=?", (pid,))
     # Audit + Telegram after connection closes (avoids SQLite "database is locked")
     if name is not None:
@@ -608,10 +636,10 @@ def patient_delete(pid):
             session.get("doctor_name", ""),
             "delete",
             entity_id=pid,
-            detail=name,
+            detail=f"{card_number} - {name}",
         )
         if build_delete_message:
-            msg = build_delete_message(name, 1)
+            msg = build_delete_message(name, 1, card_number)
             ok, _ = try_send_for_doctor(doctor_id, msg)
             if not ok:
                 queue_telegram(doctor_id, msg)
@@ -631,10 +659,10 @@ def patients_export_csv():
         ).fetchall()
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["ID", "Gregorian", "Ethiopian", "Patient", "Card Number", "Ticket", "Procedure",
+    w.writerow(["ID", "Card Number", "Gregorian", "Ethiopian", "Patient", "Ticket", "Procedure",
                 "Fee", "Pct", "Cut", "Created"])
     for r in rows:
-        w.writerow([r["id"], r["greg_date"], r["eth_date"], r["patient_name"], r["card_number"],
+        w.writerow([r["id"], r["card_number"], r["greg_date"], r["eth_date"], r["patient_name"],
                     r["ticket_no"], r["procedure"], r["total_fee"], r["doctor_pct"],
                     r["my_earning"], r["created_at"]])
     resp = make_response(chr(65279) + buf.getvalue())
@@ -670,6 +698,7 @@ h2{{color:#55616c;margin:0 0 8px;border-bottom:3px solid #b98a3e;padding-bottom:
 <div class="row"><span>Receipt</span><strong>#REC-{r['id']:05d}</strong></div>
 <div class="row"><span>Gregorian</span><strong>{r['greg_date']}</strong></div>
 <div class="row"><span>Ethiopian</span><strong>{r['eth_date']}</strong></div>
+<div class="row"><span>Card Number</span><strong>{r['card_number']}</strong></div>
 <div class="row"><span>Patient</span><strong>{r['patient_name']}</strong></div>
 <div class="row"><span>Card Number</span><strong>{r['card_number'] or 'N/A'}</strong></div>
 <div class="row"><span>Ticket</span><strong>{r['ticket_no'] or 'N/A'}</strong></div>
@@ -2636,6 +2665,7 @@ def monthly_report_html():
     eth = get_ethiopian_date(); parts = eth.split()
     m, y = (parts[0], int(parts[2])) if len(parts) >= 3 and str(parts[2]).isdigit() else ("", 0)
     with get_conn() as conn:
+
         rows = _execute(conn, "SELECT * FROM patients WHERE doctor_id=? ORDER BY id", (doctor_id,)).fetchall()
         doc = _execute(conn, "SELECT name FROM doctors WHERE id=?", (doctor_id,)).fetchone()
     month_rows=[r for r in rows if r["eth_date"] and m in r["eth_date"] and str(y) in r["eth_date"]]

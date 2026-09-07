@@ -272,6 +272,22 @@ def init_db():
                 if col not in cols:
                     _execute(c, ddl)
 
+            # Patient card-number migration.
+            _execute(c, "SELECT column_name FROM information_schema.columns WHERE table_name = 'patients'")
+            patient_cols = {row["column_name"] for row in c.fetchall()}
+            if "card_number" not in patient_cols:
+                _execute(c, "ALTER TABLE patients ADD COLUMN card_number TEXT")
+            _execute(c, "CREATE INDEX IF NOT EXISTS idx_patients_doctor_card ON patients (doctor_id, card_number)")
+            _execute(c, """
+                UPDATE patients p
+                SET card_number = 'CARD-' || LPAD((
+                    SELECT MIN(p2.id)::text FROM patients p2
+                    WHERE p2.doctor_id = p.doctor_id
+                      AND lower(COALESCE(p2.patient_name, '')) = lower(COALESCE(p.patient_name, ''))
+                ), 6, '0')
+                WHERE p.card_number IS NULL OR TRIM(p.card_number) = ''
+            """)
+
             # Existing installations retain their doctors.
             _execute(c, 
                 """
@@ -452,9 +468,25 @@ def init_db():
                 """
             )
 
-            patient_cols = {r["name"] for r in _execute(c, "PRAGMA table_info(patients)").fetchall()}
+            patient_cols = {
+                r["name"]
+                for r in _execute(c,
+                    "PRAGMA table_info(patients)"
+                ).fetchall()
+            }
             if "card_number" not in patient_cols:
                 _execute(c, "ALTER TABLE patients ADD COLUMN card_number TEXT DEFAULT ''")
+            _execute(c, "CREATE INDEX IF NOT EXISTS idx_patients_doctor_card ON patients (doctor_id, card_number)")
+            _execute(c, """
+                UPDATE patients
+                SET card_number = 'CARD-' || printf('%06d', (
+                    SELECT MIN(p2.id) FROM patients p2
+                    WHERE p2.doctor_id = patients.doctor_id
+                      AND lower(COALESCE(p2.patient_name, '')) =
+                          lower(COALESCE(patients.patient_name, ''))
+                ))
+                WHERE card_number IS NULL OR TRIM(card_number) = ''
+            """)
 
             cols = {
                 r["name"]

@@ -184,6 +184,14 @@ def main():
             )
             print(f"  {table}: {count} SQLite row(s) processed")
 
+        with pg_conn.cursor() as cur:
+            cur.execute("""
+                UPDATE patients p
+                SET card_number = 'CARD-' || LPAD(p.id::text, 6, '0')
+                WHERE p.card_number IS NULL OR TRIM(p.card_number) = ''
+            """)
+        pg_conn.commit()
+
         reset_sequences(pg_conn)
 
         print("\nVerification:")

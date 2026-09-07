@@ -197,7 +197,8 @@ def build_daily_report(doctor_id, greg_date_str=None):
             t = f" · #{html_escape(str(r['ticket_no']))}" if r["ticket_no"] else ""
             report += (
                 f"\n{i}. <b>{html_escape(str(r['patient_name'] or '—'))}</b>"
-                f" · Card: {html_escape(str(r['card_number'] or '—'))}{t}"
+                f" · Card:
+<b>{html_escape(str(r['card_number'] or '—'))}</b>{t}"
                 f"\n   {html_escape(str(r['procedure'] or '—'))}"
                 f" · {float(r['total_fee'] or 0):,.2f} Birr"
             )
@@ -215,6 +216,8 @@ def build_monthly_report(doctor_id, eth_date_str=None):
     month_label = f'{eth_m} {eth_y}'
     with get_conn() as conn:
         rows = _execute(conn,'SELECT patient_name, card_number, ticket_no, procedure, eth_date, total_fee, my_earning FROM patients WHERE doctor_id=? ORDER BY id', (doctor_id,)).fetchall()
+        doc = _execute(conn,'SELECT base_salary FROM
+doctors WHERE id=?', (doctor_id,)).fetchone()
     month_rows = [r for r in rows if r['eth_date'] and eth_m in r['eth_date'] and eth_y in r['eth_date']]
     income = sum(float(r['total_fee'] or 0) for r in month_rows)
     cut = sum(float(r['my_earning'] or 0) for r in month_rows)
@@ -234,7 +237,7 @@ def build_monthly_report(doctor_id, eth_date_str=None):
         for i, r in enumerate(month_rows[:25], 1):
             report += (f'\n{i}. {html_escape(str(r["eth_date"] or "-"))}'
                        f' - <b>{html_escape(str(r["patient_name"] or "-"))}</b>'
-                       f' · Card: {html_escape(str(r["card_number"] or "-"))}'
+                       f' · Card: <b>{html_escape(str(r["card_number"] or "-"))}</b>'
                        f'\n   {html_escape(str(r["procedure"] or "-"))}'
                        f' - {float(r["total_fee"] or 0):,.2f} Birr')
     return report + f'\n{_footer()}', month_label
@@ -243,9 +246,49 @@ def build_monthly_report(doctor_id, eth_date_str=None):
 def build_earning_message(title, eth, ticket, patient, card_number, procedure, fee, cut, doctor_id):
     label, income, cut_sum, pagume_carry, payable = _month_totals(doctor_id, eth)
     carry_text = f"\n- Pagume carryover: {pagume_carry:,.2f} Birr" if pagume_carry else ""
+    card = card_number or "-"
+
     return (
         f"{_header('EARNING', title)}\n"
         f"Date: {html_escape(str(eth or '-'))}\n"
+        f"Card number: <b>{html_escape(str(card))}</b>\n"
+        f"Ticket: <b>{html_escape(str(ticket or '-'))}</b>\n"
+        f"Patient: <b>{html_escape(str(patient or '-'))}</b>\n"
+        f"Procedure: {html_escape(str(procedure or '-'))}\n"
+        f"Fee: <b>{fee:,.2f} Birr</b>\n"
+        f"Your cut: <b>{cut:,.2f} Birr</b>\n\n"
+        f"Month to date - <b>{html_escape(label)}</b>\n"
+        f"- Income: {income:,.2f} Birr\n"
+        f"- Your percentage earnings: {cut_sum:,.2f} Birr"
+        f"{carry_text}\n"
+        f"Total percentage earnings payable: <b>{payable:,.2f} Birr</b>\n"
+        f"{_footer()}"
+    )
+
+
+def build_delete_message(names, count=1, card_number=None):
+    if count <= 1:
+        block = f"Patient: <b>{html_escape(str(names))}</b>" + (
+            f"\nCard number: <b>{html_escape(str(card_number))}</b>"
+            if card_number else ""
+        )
+        title = "Record deleted"
+    else:
+        block = f"Patients ({count}):\n" + "\n".join(
+            f"- {html_escape(str(n))}" for n in names
+        )
+        title = f"{count} records deleted"
+
+    return (
+        f"{_header('DELETE', title)}\n"
+        f"{block}\n\n"
+        f"Removed from the clinic database.\n"
+        f"{_footer()}"
+    )
+    return (
+        f"{_header('EARNING', title)}\n"
+        f"Date: {html_escape(str(eth or '-'))}\n"
+        f"Card number: <b>{html_escape(str(card))}</b>\n"
         f"Ticket: <b>{html_escape(str(ticket or '-'))}</b>\n"
         f"Patient: <b>{html_escape(str(patient or '-'))}</b>\n"
         f"Card Number: <b>{html_escape(str(card_number or '-'))}</b>\n"
@@ -260,9 +303,9 @@ def build_earning_message(title, eth, ticket, patient, card_number, procedure, f
         f"{_footer()}"
     )
 
-def build_delete_message(names, count=1):
+def build_delete_message(names, count=1, card_number=None):
     if count <= 1:
-        block = f"Patient: <b>{html_escape(str(names))}</b>"
+        block = f"Patient: <b>{html_escape(str(names))}</b>" + (f"\nCard number: <b>{html_escape(str(card_number))}</b>" if card_number else "")
         title = "Record deleted"
     else:
         block = f"Patients ({count}):\n" + "\n".join(

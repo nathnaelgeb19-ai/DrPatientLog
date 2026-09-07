@@ -33,6 +33,7 @@
       <thead>
         <tr>
           <th>ID</th>
+          <th>Card Number</th>
           <th>Eth date</th>
           <th>Patient</th>
           <th>Card Number</th>
@@ -47,6 +48,7 @@
         {% for r in patients %}
         <tr>
           <td>{{ r.id }}</td>
+          <td><b>{{ r.card_number }}</b></td>
           <td>{{ r.eth_date }}</td>
           <td><b>{{ r.patient_name }}</b></td>
           <td>{{ r.card_number or '—' }}</td>
