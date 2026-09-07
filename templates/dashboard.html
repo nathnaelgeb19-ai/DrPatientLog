@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · {{ clinic_name }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <p class="kicker">Overview</p>
+    <h1>Dashboard</h1>
+    <p class="lede">{{ eth_today }}</p>
+  </div>
+</header>
+
+<form method="get" class="filters">
+  <div class="field">
+    <label>Stats range</label>
+    <select name="range" onchange="this.form.submit()">
+      <option value="today" {% if stats_range=='today' %}selected{% endif %}>Today</option>
+      <option value="week" {% if stats_range=='week' %}selected{% endif %}>Last 7 days</option>
+      <option value="eth_month" {% if stats_range=='eth_month' %}selected{% endif %}>Ethiopian month</option>
+      <option value="all" {% if stats_range=='all' %}selected{% endif %}>All time</option>
+    </select>
+  </div>
+</form>
+
+<div class="metrics">
+  <article class="metric m1">
+    <span>Today's cut</span>
+    <strong>{{ "%.2f"|format(today_cut) }} <small>ETB</small></strong>
+  </article>
+  <article class="metric m2">
+    <span>Range cut</span>
+    <strong>{{ "%.2f"|format(month_cut) }} <small>ETB</small></strong>
+  </article>
+  <article class="metric m3">
+    <span>Range income</span>
+    <strong>{{ "%.2f"|format(month_income) }} <small>ETB</small></strong>
+  </article>
+  <article class="metric m4">
+    <span>Patients</span>
+    <strong>{{ month_count }}</strong>
+  </article>
+</div>
+
+<section class="surface">
+  <div class="surface-head">
+    <div>
+      <h2>Recent patients</h2>
+      <p class="hint">Latest recorded visits</p>
+    </div>
+    <a class="btn btn-main" href="{{ url_for('patient_new') }}">+ New patient</a>
+  </div>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Eth date</th>
+          <th>Patient</th>
+          <th>Card Number</th>
+          <th>Ticket</th>
+          <th>Procedure</th>
+          <th>Fee</th>
+          <th>Cut</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recent %}
+        <tr>
+          <td>{{ r.eth_date }}</td>
+          <td><b>{{ r.patient_name }}</b></td>
+          <td>{{ r.card_number or '—' }}</td>
+          <td>{{ r.ticket_no or '—' }}</td>
+          <td>{{ r.procedure }}</td>
+          <td>{{ "%.2f"|format(r.total_fee or 0) }}</td>
+          <td>{{ "%.2f"|format(r.my_earning or 0) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">No records yet</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Initial setup · {{ clinic_name }}{% endblock %}
+{% block auth %}
+<div class="gate">
+  <div class="gate-card">
+    <p class="kicker">{{ clinic_short or clinic_name }}</p>
+    <h1>Initial setup</h1>
+    <p class="lede">Create the administrator account for this installation.</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}<div class="toast toast-{{ cat }}">{{ msg }}</div>{% endfor %}
+    {% endwith %}
+    <form method="post">
+      <div class="field">
+        <label>Doctor / admin name</label>
+        <input name="name" required autocomplete="name" placeholder="Dr. Full Name">
+      </div>
+      <div class="field">
+        <label>Username</label>
+        <input name="username" required autocomplete="username" placeholder="admin">
+      </div>
+      <div class="field">
+        <label>Recovery email</label>
+        <input type="email" name="email" required autocomplete="email" placeholder="doctor@example.com">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required minlength="8" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label>Confirm password</label>
+        <input type="password" name="confirm_password" required minlength="8" autocomplete="new-password">
+      </div>
+      <button class="btn btn-main btn-block" type="submit">Create administrator account</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

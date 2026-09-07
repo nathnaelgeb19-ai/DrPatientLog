@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Login · {{ clinic_name }}{% endblock %}
+{% block auth %}
+<div class="gate">
+  <div class="gate-card">
+    <p class="kicker">{{ clinic_short or clinic_name }}</p>
+    <h1>{{ clinic_name }}</h1>
+    <p class="lede">Sign in to the practice workspace</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}<div class="toast toast-{{ cat }}">{{ msg }}</div>{% endfor %}
+    {% endwith %}
+    <form method="post">
+      <div class="field">
+        <label>Username</label>
+        <input name="username" required autocomplete="username" placeholder="Username">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required autocomplete="current-password">
+      </div>
+      <button class="btn btn-main btn-block" type="submit">Sign in</button>
+    </form>
+    <p class="gate-link"><a href="{{ url_for('forgot_password') }}">Forgot password?</a></p>
+  </div>
+</div>
+{% endblock %}

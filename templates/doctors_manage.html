@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Doctors · {{ clinic_name }}{% endblock %}
+{% block content %}
+<header class="page-head row">
+  <div>
+    <p class="kicker">Clinic team</p>
+    <h1>Doctors</h1>
+    <p class="lede">Manage your team, keep the active profile current, and control access.</p>
+  </div>
+  <div class="chip"><span class="dot"></span> {{ doctors|length }} doctor{% if doctors|length != 1 %}s{% endif %} registered</div>
+</header>
+
+<div class="split-layout">
+  <section class="surface">
+    <div class="surface-head">
+      <div>
+        <p class="kicker muted">Active profile</p>
+        <h2>{{ active_doc.name }}</h2>
+        <p class="hint">Currently signed in. Changes save to the clinic database.</p>
+      </div>
+      <div class="who-avatar lg">{{ active_doc.name[:1]|upper }}</div>
+    </div>
+    <form method="post" class="grid-2">
+      <input type="hidden" name="action" value="edit_active">
+      <div>
+        <label>Doctor name</label>
+        <input name="name" value="{{ active_doc.name }}" required>
+      </div>
+      <div>
+        <label>Birth year</label>
+        <input name="birth_year" type="number" min="1900" max="2100" value="{{ active_doc.birth_year or '' }}" placeholder="1990">
+      </div>
+      <div>
+        <label>Username</label>
+        <input name="username" value="{{ active_doc.username or '' }}" autocomplete="username">
+      </div>
+      <div>
+        <label>Recovery email</label>
+        <input name="email" type="email" value="{{ active_doc.email or '' }}" autocomplete="email" placeholder="doctor@example.com">
+      </div>
+      <div class="span-2">
+        <label>New password <span class="opt">Leave blank to keep current</span></label>
+        <input name="password" type="password" minlength="8" placeholder="Only if changing" autocomplete="new-password">
+      </div>
+      <div class="span-2 actions">
+        <button class="btn btn-main" type="submit">✓ Save doctor information</button>
+        <a class="btn btn-ghost" href="{{ url_for('backup_page') }}">Protect database</a>
+      </div>
+    </form>
+  </section>
+
+  <aside class="surface side-card">
+    <p class="kicker muted">Profile status</p>
+    <div class="kv"><span>Signed in as</span><b>{{ active_doc.username or 'No username' }}</b></div>
+    <div class="kv"><span>Birth year</span><b>{{ active_doc.birth_year or 'Not set' }}</b></div>
+    <div class="kv"><span>Account created</span><b>{{ active_doc.created_at or '—' }}</b></div>
+    <div class="note-ok">
+      <span>🔒</span>
+      <div><b>Secure access</b><small>Passwords stored as PBKDF2 hashes.</small></div>
+    </div>
+  </aside>
+</div>
+
+<section class="surface">
+  <div class="surface-head">
+    <div>
+      <p class="kicker muted">Team directory</p>
+      <h2>All doctors</h2>
+      <p class="hint">Switch or delete requires that doctor's password.</p>
+    </div>
+  </div>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Doctor</th>
+          <th>Username</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in doctors %}
+        <tr>
+          <td>
+            <div class="person">
+              <span class="mini">{{ d.name[:1]|upper }}</span>
+              <b>{{ d.name }}</b>
+            </div>
+          </td>
+          <td>{{ d.username or '—' }}</td>
+          <td>
+            {% if d.id == active_id %}
+              <span class="tag tag-ok">Active</span>
+            {% else %}
+              <span class="tag">Available</span>
+            {% endif %}
+          </td>
+          <td class="row-actions">
+            {% if d.id != active_id %}
+            <form method="post" class="switch-form">
+              <input type="hidden" name="action" value="switch">
+              <input type="hidden" name="doctor_id" value="{{ d.id }}">
+              <input
+                name="switch_password"
+                type="password"
+                placeholder="Password"
+                autocomplete="current-password"
+                required
+              >
+              <button class="btn btn-dark btn-xs" type="submit">Switch</button>
+            </form>
+            <form method="post" class="switch-form" onsubmit="return confirm('Delete this doctor permanently? This cannot be undone.');">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="doctor_id" value="{{ d.id }}">
+              <input
+                name="delete_password"
+                type="password"
+                placeholder="Password"
+                autocomplete="current-password"
+                required
+              >
+              <button class="btn btn-danger btn-xs" type="submit">Delete</button>
+            </form>
+            {% else %}
+              <span class="muted">Current account</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="surface">
+  <div class="surface-head">
+    <div>
+      <p class="kicker muted">Expand the team</p>
+      <h2>Add a doctor</h2>
+      <p class="hint">Create a separate login without changing the active account.</p>
+    </div>
+  </div>
+  <form method="post" class="grid-2">
+    <input type="hidden" name="action" value="add">
+    <div><label>Doctor name</label><input name="name" required placeholder="Dr. Full Name"></div>
+    <div><label>Username</label><input name="username" autocomplete="off"></div>
+    <div><label>Password</label><input name="password" type="password" minlength="4" autocomplete="new-password"></div>
+    <div><label>Birth year</label><input name="birth_year" type="number" min="1900" max="2100" placeholder="1990"></div>
+    <div><label>Recovery email</label><input name="email" type="email" placeholder="doctor@example.com"></div>
+    <div>
+      <label>Role</label>
+      <select name="role">
+        <option value="doctor">Doctor</option>
+        <option value="admin">Administrator</option>
+      </select>
+    </div>
+    <div class="span-2 actions">
+      <button class="btn btn-main" type="submit">＋ Add doctor</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
