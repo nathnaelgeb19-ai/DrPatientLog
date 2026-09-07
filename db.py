@@ -152,6 +152,7 @@ def init_db():
                     greg_date TEXT,
                     eth_date TEXT,
                     patient_name TEXT,
+                    card_number TEXT DEFAULT '',
                     ticket_no TEXT,
                     procedure TEXT,
                     total_fee DOUBLE PRECISION,
@@ -248,6 +249,11 @@ def init_db():
                 """
             )
             cols = {row["column_name"] for row in c.fetchall()}
+
+            _execute(c, "SELECT column_name FROM information_schema.columns WHERE table_name = 'patients'")
+            patient_cols = {row["column_name"] for row in c.fetchall()}
+            if "card_number" not in patient_cols:
+                _execute(c, "ALTER TABLE patients ADD COLUMN card_number TEXT DEFAULT ''")
 
             migrations = {
                 "email": "ALTER TABLE doctors ADD COLUMN email TEXT DEFAULT ''",
@@ -358,6 +364,7 @@ def init_db():
                     greg_date TEXT,
                     eth_date TEXT,
                     patient_name TEXT,
+                    card_number TEXT DEFAULT '',
                     ticket_no TEXT,
                     procedure TEXT,
                     total_fee REAL,
@@ -444,6 +451,10 @@ def init_db():
                 )
                 """
             )
+
+            patient_cols = {r["name"] for r in _execute(c, "PRAGMA table_info(patients)").fetchall()}
+            if "card_number" not in patient_cols:
+                _execute(c, "ALTER TABLE patients ADD COLUMN card_number TEXT DEFAULT ''")
 
             cols = {
                 r["name"]

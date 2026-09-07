@@ -5,7 +5,7 @@ DATABASE_URL = os.environ["MIGRATION_DATABASE_URL"]
 
 s = sqlite3.connect(SQLITE_DB)
 s.row_factory = sqlite3.Row
-patients = s.execute("SELECT greg_date, eth_date, patient_name, ticket_no, procedure, total_fee, doctor_pct, my_earning, created_at FROM patients ORDER BY id").fetchall()
+patients = s.execute("SELECT greg_date, eth_date, patient_name, card_number, ticket_no, procedure, total_fee, doctor_pct, my_earning, created_at FROM patients ORDER BY id").fetchall()
 print(f"SQLite patients found: {len(patients)}")
 if len(patients) != 14:
     raise RuntimeError(f"Expected exactly 14 patients, found {len(patients)}")
@@ -26,7 +26,7 @@ try:
             if existing:
                 raise RuntimeError(f"STOP: Matching ticket numbers already exist: {existing}")
             for row in patients:
-                c.execute("INSERT INTO patients (greg_date, eth_date, patient_name, ticket_no, procedure, total_fee, doctor_pct, my_earning, doctor_id, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,1,%s)", (row["greg_date"], row["eth_date"], row["patient_name"], row["ticket_no"], row["procedure"], row["total_fee"], row["doctor_pct"], row["my_earning"], row["created_at"]))
+                c.execute("INSERT INTO patients (greg_date, eth_date, patient_name, card_number, ticket_no, procedure, total_fee, doctor_pct, my_earning, doctor_id, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,1,%s)", (row["greg_date"], row["eth_date"], row["patient_name"], row["card_number"], row["ticket_no"], row["procedure"], row["total_fee"], row["doctor_pct"], row["my_earning"], row["created_at"]))
             c.execute("SELECT COUNT(*) FROM patients WHERE ticket_no = ANY(%s)", (tickets,))
             count = c.fetchone()[0]
             if count != 14:

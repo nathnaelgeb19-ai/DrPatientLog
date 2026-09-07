@@ -54,6 +54,7 @@
         <tr>
           <th>Eth date</th>
           <th>Patient</th>
+          <th>Card Number</th>
           <th>Ticket</th>
           <th>Procedure</th>
           <th>Fee</th>
@@ -65,13 +66,14 @@
         <tr>
           <td>{{ r.eth_date }}</td>
           <td><b>{{ r.patient_name }}</b></td>
+          <td>{{ r.card_number or '—' }}</td>
           <td>{{ r.ticket_no or '—' }}</td>
           <td>{{ r.procedure }}</td>
           <td>{{ "%.2f"|format(r.total_fee or 0) }}</td>
           <td>{{ "%.2f"|format(r.my_earning or 0) }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="empty">No records yet</td></tr>
+        <tr><td colspan="7" class="empty">No records yet</td></tr>
         {% endfor %}
       </tbody>
     </table>

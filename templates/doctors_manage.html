@@ -27,10 +27,6 @@
         <input name="name" value="{{ active_doc.name }}" required>
       </div>
       <div>
-        <label>Base salary · ETB</label>
-        <input name="base_salary" type="number" step="0.01" min="0" value="{{ active_doc.base_salary or 0 }}">
-      </div>
-      <div>
         <label>Birth year</label>
         <input name="birth_year" type="number" min="1900" max="2100" value="{{ active_doc.birth_year or '' }}" placeholder="1990">
       </div>
@@ -56,7 +52,6 @@
   <aside class="surface side-card">
     <p class="kicker muted">Profile status</p>
     <div class="kv"><span>Signed in as</span><b>{{ active_doc.username or 'No username' }}</b></div>
-    <div class="kv"><span>Salary</span><b>{{ "%.2f"|format(active_doc.base_salary or 0) }} ETB</b></div>
     <div class="kv"><span>Birth year</span><b>{{ active_doc.birth_year or 'Not set' }}</b></div>
     <div class="kv"><span>Account created</span><b>{{ active_doc.created_at or '—' }}</b></div>
     <div class="note-ok">
@@ -149,7 +144,6 @@
   <form method="post" class="grid-2">
     <input type="hidden" name="action" value="add">
     <div><label>Doctor name</label><input name="name" required placeholder="Dr. Full Name"></div>
-    <div><label>Base salary · ETB</label><input name="base_salary" type="number" step="0.01" min="0" value="45000"></div>
     <div><label>Username</label><input name="username" autocomplete="off"></div>
     <div><label>Password</label><input name="password" type="password" minlength="4" autocomplete="new-password"></div>
     <div><label>Birth year</label><input name="birth_year" type="number" min="1900" max="2100" placeholder="1990"></div>

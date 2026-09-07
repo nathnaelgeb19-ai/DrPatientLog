@@ -12,7 +12,8 @@ Web version of the clinic manager so **Telegram reports can run 24/7** without k
 - Telegram settings + send daily report
 - Outbox retry + scheduled daily job (server time)
 - Audit log
-- Base salary setting
+- Doctor percentage earnings per procedure
+- Pagume percentage earnings are carried into Meskerem of the following Ethiopian year
 - Premium doctor management page with active-doctor profile editing and secure credential updates
 - Local computer backup: consistent SQLite snapshots downloadable directly from the web UI
 - Google Drive backup and full database restore with automatic safety copy

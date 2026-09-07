@@ -1,4 +1,4 @@
-﻿"""Telegram HTTP helpers and branded reports."""
+"""Telegram HTTP helpers and branded reports."""
 import json
 import ssl
 import urllib.request
@@ -11,7 +11,7 @@ def _execute(obj, query, params=()):
     return obj.execute(query, params) if params else obj.execute(query)
 
 from config import CLINIC_NAME, CLINIC_NAME_SHORT
-from ethiopian import get_ethiopian_date
+from ethiopian import get_ethiopian_date, ETH_MONTHS
 from db import get_conn, get_doctor
 
 try:
@@ -151,20 +151,24 @@ def try_send_for_doctor(doctor_id, text):
 def _month_totals(doctor_id, eth_date_str):
     parts = (eth_date_str or "").split()
     eth_m = parts[0] if parts else ""
-    eth_y = parts[2] if len(parts) >= 3 else ""
+    eth_y = int(parts[2]) if len(parts) >= 3 and str(parts[2]).isdigit() else 0
     with get_conn() as conn:
         rows = _execute(conn,
             "SELECT eth_date, total_fee, my_earning FROM patients WHERE doctor_id=?",
             (doctor_id,),
         ).fetchall()
-        doc = _execute(conn,"SELECT base_salary FROM doctors WHERE id=?", (doctor_id,)).fetchone()
     income = cut_sum = 0.0
     for r in rows:
-        if r["eth_date"] and eth_m in r["eth_date"] and eth_y in r["eth_date"]:
+        if r["eth_date"] and eth_m in r["eth_date"] and str(eth_y) in r["eth_date"]:
             income += float(r["total_fee"] or 0)
             cut_sum += float(r["my_earning"] or 0)
-    base = float(doc["base_salary"] if doc else 45000)
-    return f"{eth_m} {eth_y}".strip(), income, cut_sum, base, base + cut_sum
+    pagume_carry = 0.0
+    if eth_m == ETH_MONTHS[0] and eth_y:
+        pagume_carry = sum(
+            float(r["my_earning"] or 0) for r in rows
+            if r["eth_date"] and ETH_MONTHS[-1] in r["eth_date"] and str(eth_y - 1) in r["eth_date"]
+        )
+    return f"{eth_m} {eth_y}".strip(), income, cut_sum, pagume_carry, cut_sum + pagume_carry
 
 
 def build_daily_report(doctor_id, greg_date_str=None):
@@ -173,7 +177,7 @@ def build_daily_report(doctor_id, greg_date_str=None):
     eth = get_ethiopian_date(greg)
     with get_conn() as conn:
         rows = _execute(conn,
-            """SELECT patient_name, ticket_no, procedure, total_fee, my_earning
+            """SELECT patient_name, card_number, ticket_no, procedure, total_fee, my_earning
                FROM patients WHERE doctor_id=? AND greg_date=? ORDER BY id""",
             (doctor_id, greg),
         ).fetchall()
@@ -185,14 +189,15 @@ def build_daily_report(doctor_id, greg_date_str=None):
         f"📅 Ethiopian: {html_escape(eth or '—')}\n"
         f"👥 Patients: <b>{len(rows)}</b>\n"
         f"💰 Total income: <b>{total_income:,.2f} Birr</b>\n"
-        f"✂️ Doctor cut: <b>{total_cut:,.2f} Birr</b>"
+        f"✂️ Doctor percentage earnings: <b>{total_cut:,.2f} Birr</b>"
     )
     if rows:
         report += f"\n\n📋 <b>Today's records</b> · {min(len(rows), 25)} of {len(rows)}"
         for i, r in enumerate(rows[:25], 1):
             t = f" · #{html_escape(str(r['ticket_no']))}" if r["ticket_no"] else ""
             report += (
-                f"\n{i}. <b>{html_escape(str(r['patient_name'] or '—'))}</b>{t}"
+                f"\n{i}. <b>{html_escape(str(r['patient_name'] or '—'))}</b>"
+                f" · Card: {html_escape(str(r['card_number'] or '—'))}{t}"
                 f"\n   {html_escape(str(r['procedure'] or '—'))}"
                 f" · {float(r['total_fee'] or 0):,.2f} Birr"
             )
@@ -209,45 +214,51 @@ def build_monthly_report(doctor_id, eth_date_str=None):
     eth_m, eth_y = parts[0], parts[2]
     month_label = f'{eth_m} {eth_y}'
     with get_conn() as conn:
-        rows = _execute(conn,'SELECT patient_name, ticket_no, procedure, eth_date, total_fee, my_earning FROM patients WHERE doctor_id=? ORDER BY id', (doctor_id,)).fetchall()
-        doc = _execute(conn,'SELECT base_salary FROM doctors WHERE id=?', (doctor_id,)).fetchone()
+        rows = _execute(conn,'SELECT patient_name, card_number, ticket_no, procedure, eth_date, total_fee, my_earning FROM patients WHERE doctor_id=? ORDER BY id', (doctor_id,)).fetchall()
     month_rows = [r for r in rows if r['eth_date'] and eth_m in r['eth_date'] and eth_y in r['eth_date']]
     income = sum(float(r['total_fee'] or 0) for r in month_rows)
     cut = sum(float(r['my_earning'] or 0) for r in month_rows)
-    base = float(doc['base_salary'] if doc else 45000)
-    take = base + cut
+    pagume_carry = 0.0
+    if eth_m == ETH_MONTHS[0]:
+        prev_y = int(eth_y) - 1
+        pagume_carry = sum(float(r['my_earning'] or 0) for r in rows if r['eth_date'] and ETH_MONTHS[-1] in r['eth_date'] and str(prev_y) in r['eth_date'])
+    payable = cut + pagume_carry
     report = (f'{_header("MONTHLY", "Monthly report", month_label)}\n'
               f'Patients treated: <b>{len(month_rows)}</b>\n'
               f'Total income: <b>{income:,.2f} Birr</b>\n'
-              f'Your cut: <b>{cut:,.2f} Birr</b>\n'
-              f'Base salary: {base:,.2f} Birr\n'
-              f'<b>Take-home: {take:,.2f} Birr</b>')
+              f'Your percentage earnings: <b>{cut:,.2f} Birr</b>\n'
+              + (f'Pagume {int(eth_y)-1} carryover: <b>{pagume_carry:,.2f} Birr</b>\n' if pagume_carry else '')
+              + f'<b>Total percentage earnings payable: {payable:,.2f} Birr</b>')
     if month_rows:
         report += f'\n\n<b>Patient records</b> - {min(len(month_rows), 25)} of {len(month_rows)}'
         for i, r in enumerate(month_rows[:25], 1):
             report += (f'\n{i}. {html_escape(str(r["eth_date"] or "-"))}'
                        f' - <b>{html_escape(str(r["patient_name"] or "-"))}</b>'
+                       f' · Card: {html_escape(str(r["card_number"] or "-"))}'
                        f'\n   {html_escape(str(r["procedure"] or "-"))}'
                        f' - {float(r["total_fee"] or 0):,.2f} Birr')
     return report + f'\n{_footer()}', month_label
-def build_earning_message(title, eth, ticket, patient, procedure, fee, cut, doctor_id):
-    label, income, cut_sum, base, take = _month_totals(doctor_id, eth)
+
+
+def build_earning_message(title, eth, ticket, patient, card_number, procedure, fee, cut, doctor_id):
+    label, income, cut_sum, pagume_carry, payable = _month_totals(doctor_id, eth)
+    carry_text = f"\n- Pagume carryover: {pagume_carry:,.2f} Birr" if pagume_carry else ""
     return (
         f"{_header('EARNING', title)}\n"
         f"Date: {html_escape(str(eth or '-'))}\n"
         f"Ticket: <b>{html_escape(str(ticket or '-'))}</b>\n"
         f"Patient: <b>{html_escape(str(patient or '-'))}</b>\n"
+        f"Card Number: <b>{html_escape(str(card_number or '-'))}</b>\n"
         f"Procedure: {html_escape(str(procedure or '-'))}\n"
         f"Fee: <b>{fee:,.2f} Birr</b>\n"
         f"Your cut: <b>{cut:,.2f} Birr</b>\n\n"
         f"Month to date - <b>{html_escape(label)}</b>\n"
         f"- Income: {income:,.2f} Birr\n"
-        f"- Your cut: {cut_sum:,.2f} Birr\n"
-        f"- Base salary: {base:,.2f} Birr\n"
-        f"Take-home: <b>{take:,.2f} Birr</b>\n"
+        f"- Your percentage earnings: {cut_sum:,.2f} Birr"
+        f"{carry_text}\n"
+        f"Total percentage earnings payable: <b>{payable:,.2f} Birr</b>\n"
         f"{_footer()}"
     )
-
 
 def build_delete_message(names, count=1):
     if count <= 1:

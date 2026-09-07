@@ -9,7 +9,7 @@
   <div>
     <p class="kicker">Reports</p>
     <h1>Monthly income</h1>
-    <p class="lede">Ethiopian-month earnings and salary payment history</p>
+    <p class="lede">Ethiopian-month percentage earnings and payment history</p>
   </div>
 </header>
 
@@ -39,9 +39,11 @@
           <td>{{ m.count }}</td>
           <td>{{ "%.2f"|format(m.income) }} ETB</td>
           <td>{{ "%.2f"|format(m.pct) }}%</td>
-          <td><b>{{ "%.2f"|format(m.cut) }} ETB</b></td>
+          <td><b>{{ "%.2f"|format(m.payable) }} ETB</b>{% if m.pagume_carry %}<small style="display:block;margin-top:4px;">Includes Pagume {{ m.year - 1 }}: {{ "%.2f"|format(m.pagume_carry) }} ETB</small>{% endif %}</td>
           <td>
-            {% if m.closed %}
+            {% if m.pagume_paid %}
+              <span class="badge badge-success">Paid with Meskerem {{ m.year + 1 }}</span>
+            {% elif m.closed %}
               <span class="badge badge-success">Paid &amp; Closed</span>
               <small style="display:block;margin-top:4px;">{{ m.closure.paid_eth_date }}</small>
             {% elif m.is_current %}
@@ -49,11 +51,11 @@
             {% else %}
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                 <span class="badge">Completed month</span>
-                <form method="post" action="{{ url_for('monthly_pay') }}" onsubmit="return confirm('Mark {{ m.label }} salary as paid and close this Ethiopian month?');">
+                {% if m.month != 'ጳጉሜ' %}<form method="post" action="{{ url_for('monthly_pay') }}" onsubmit="return confirm('Mark {{ m.label }} salary as paid and close this Ethiopian month?');">
                 <input type="hidden" name="month" value="{{ m.month }}">
                 <input type="hidden" name="year" value="{{ m.year }}">
                   <button class="btn btn-main" type="submit">Paid &amp; Close Month</button>
-                </form>
+                </form>{% else %}<span class="badge">Will be paid with Meskerem {{ m.year + 1 }}</span>{% endif %}
               </div>
             {% endif %}
           </td>

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Holy Bethel Dental Clinic â€” Web application
 Runs 24/7 on a free/cheap host (Render, Railway, etc.)
 """
@@ -441,7 +441,7 @@ def patients():
         ).fetchall()
     filtered = []
     for r in rows:
-        text = f"{r['patient_name']} {r['ticket_no']} {r['procedure']} {r['eth_date']}".lower()
+        text = f"{r['patient_name']} {r['card_number']} {r['ticket_no']} {r['procedure']} {r['eth_date']}".lower()
         if q and q not in text:
             continue
         g = r["greg_date"] or ""
@@ -462,6 +462,7 @@ def patient_new():
         greg = request.form.get("greg_date", today).strip()
         eth = request.form.get("eth_date") or get_ethiopian_date(greg)
         patient = request.form.get("patient_name", "").strip().title()
+        card_number = request.form.get("card_number", "").strip().upper()
         ticket = request.form.get("ticket_no", "").strip().upper()
         procedure = request.form.get("procedure", "").strip().title()
         try:
@@ -483,23 +484,23 @@ def patient_new():
                 cur = _execute(conn,
                     """
                     INSERT INTO patients
-                    (greg_date, eth_date, patient_name, ticket_no, procedure,
+                    (greg_date, eth_date, patient_name, card_number, ticket_no, procedure,
                      total_fee, doctor_pct, my_earning, doctor_id)
-                    VALUES (?,?,?,?,?,?,?,?,?)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
                     RETURNING id
                     """,
-                    (greg, eth, patient, ticket, procedure, fee, pct, cut, doctor_id),
+                    (greg, eth, patient, card_number, ticket, procedure, fee, pct, cut, doctor_id),
                 )
                 new_id = cur.fetchone()["id"]
             else:
                 cur = _execute(conn,
                     """
                     INSERT INTO patients
-                    (greg_date, eth_date, patient_name, ticket_no, procedure,
+                    (greg_date, eth_date, patient_name, card_number, ticket_no, procedure,
                      total_fee, doctor_pct, my_earning, doctor_id)
-                    VALUES (?,?,?,?,?,?,?,?,?)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
                     """,
-                    (greg, eth, patient, ticket, procedure, fee, pct, cut, doctor_id),
+                    (greg, eth, patient, card_number, ticket, procedure, fee, pct, cut, doctor_id),
                 )
                 new_id = cur.lastrowid
         log_audit(
@@ -511,10 +512,10 @@ def patient_new():
         )
         try:
             msg = build_earning_message(
-                "New patient record", eth, ticket, patient, procedure, fee, cut, doctor_id
+                "New patient record", eth, ticket, patient, card_number, procedure, fee, cut, doctor_id
             )
         except TypeError:
-            msg = build_earning_message(eth, ticket, patient, procedure, fee, cut, doctor_id)
+            msg = build_earning_message("Record", eth, ticket, patient, "", procedure, fee, cut, doctor_id)
         ok, detail = try_send_for_doctor(doctor_id, msg)
         if not ok:
             queue_telegram(doctor_id, msg)
@@ -545,6 +546,7 @@ def patient_edit(pid):
         greg = request.form.get("greg_date", "").strip()
         eth = request.form.get("eth_date") or get_ethiopian_date(greg)
         patient = request.form.get("patient_name", "").strip().title()
+        card_number = request.form.get("card_number", "").strip().upper()
         ticket = request.form.get("ticket_no", "").strip().upper()
         procedure = request.form.get("procedure", "").strip().title()
         try:
@@ -560,10 +562,10 @@ def patient_edit(pid):
         cut = fee * (pct / 100.0)
         with get_conn() as conn:
             _execute(conn,
-                """UPDATE patients SET greg_date=?, eth_date=?, patient_name=?, ticket_no=?,
+                """UPDATE patients SET greg_date=?, eth_date=?, patient_name=?, card_number=?, ticket_no=?,
                    procedure=?, total_fee=?, doctor_pct=?, my_earning=?
                    WHERE id=? AND doctor_id=?""",
-                (greg, eth, patient, ticket, procedure, fee, pct, cut, pid, doctor_id),
+                (greg, eth, patient, card_number, ticket, procedure, fee, pct, cut, pid, doctor_id),
             )
         log_audit(
             doctor_id, session.get("doctor_name", ""), "update",
@@ -571,10 +573,10 @@ def patient_edit(pid):
         )
         try:
             msg = build_earning_message(
-                "Record updated", eth, ticket, patient, procedure, fee, cut, doctor_id
+                "Record updated", eth, ticket, patient, card_number, procedure, fee, cut, doctor_id
             )
         except TypeError:
-            msg = build_earning_message(eth, ticket, patient, procedure, fee, cut, doctor_id)
+            msg = build_earning_message("Record", eth, ticket, patient, "", procedure, fee, cut, doctor_id)
         ok, _ = try_send_for_doctor(doctor_id, msg)
         if not ok:
             queue_telegram(doctor_id, msg)
@@ -629,10 +631,10 @@ def patients_export_csv():
         ).fetchall()
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["ID", "Gregorian", "Ethiopian", "Patient", "Ticket", "Procedure",
+    w.writerow(["ID", "Gregorian", "Ethiopian", "Patient", "Card Number", "Ticket", "Procedure",
                 "Fee", "Pct", "Cut", "Created"])
     for r in rows:
-        w.writerow([r["id"], r["greg_date"], r["eth_date"], r["patient_name"],
+        w.writerow([r["id"], r["greg_date"], r["eth_date"], r["patient_name"], r["card_number"],
                     r["ticket_no"], r["procedure"], r["total_fee"], r["doctor_pct"],
                     r["my_earning"], r["created_at"]])
     resp = make_response(chr(65279) + buf.getvalue())
@@ -669,6 +671,7 @@ h2{{color:#55616c;margin:0 0 8px;border-bottom:3px solid #b98a3e;padding-bottom:
 <div class="row"><span>Gregorian</span><strong>{r['greg_date']}</strong></div>
 <div class="row"><span>Ethiopian</span><strong>{r['eth_date']}</strong></div>
 <div class="row"><span>Patient</span><strong>{r['patient_name']}</strong></div>
+<div class="row"><span>Card Number</span><strong>{r['card_number'] or 'N/A'}</strong></div>
 <div class="row"><span>Ticket</span><strong>{r['ticket_no'] or 'N/A'}</strong></div>
 <div class="row"><span>Procedure</span><strong>{r['procedure']}</strong></div>
 <div class="total"><div>Price paid</div><strong style="font-size:1.4rem">{float(r['total_fee'] or 0):,.2f} ETB</strong></div>
@@ -682,152 +685,57 @@ h2{{color:#55616c;margin:0 0 8px;border-bottom:3px solid #b98a3e;padding-bottom:
 def monthly():
     doctor_id = session["doctor_id"]
     with get_conn() as conn:
-        rows = _execute(conn,
-            "SELECT eth_date, total_fee, doctor_pct, my_earning FROM patients WHERE doctor_id=?",
-            (doctor_id,),
-        ).fetchall()
-        closures = _execute(
-            conn,
-            "SELECT * FROM salary_closures WHERE doctor_id=?",
-            (doctor_id,),
-        ).fetchall()
-
-    closed_map = {
-        (r["eth_month"], str(r["eth_year"])): r for r in closures
-    }
-
+        rows = _execute(conn, "SELECT eth_date, total_fee, doctor_pct, my_earning FROM patients WHERE doctor_id=?", (doctor_id,)).fetchall()
+        closures = _execute(conn, "SELECT * FROM salary_closures WHERE doctor_id=?", (doctor_id,)).fetchall()
+    closed_map = {(r["eth_month"], int(r["eth_year"])): r for r in closures}
     months = {}
     for r in rows:
-        parts = (r["eth_date"] or "").split()
-        if len(parts) < 3:
-            continue
-        # Normalize the Ethiopian year to an integer.  The current/previous
-        # month keys are stored as (month, int(year)); keeping patient rows
-        # in the same key format prevents duplicate rows for the current month.
-        try:
-            eth_year = int(parts[2])
-        except (TypeError, ValueError):
-            continue
-        key = (parts[0], eth_year)
-        months.setdefault(key, {"count": 0, "income": 0.0, "cut": 0.0, "pct_sum": 0.0, "pct_count": 0})
-        months[key]["count"] += 1
-        fee = float(r["total_fee"] or 0)
-        cut = float(r["my_earning"] or 0)
-        months[key]["income"] += fee
-        months[key]["cut"] += cut
-        if r["doctor_pct"] is not None:
-            months[key]["pct_sum"] += float(r["doctor_pct"])
-            months[key]["pct_count"] += 1
-
-    # Always show the current Ethiopian month, even before any patient is registered.
-    # Also show the immediately previous Ethiopian month so its salary can be
-    # explicitly marked Paid & Closed during the first days of the new month,
-    # even when that previous month has no patient rows for this doctor.
-    eth = get_ethiopian_date()
-    parts = eth.split()
-    current_key = (parts[0], int(parts[2])) if len(parts) >= 3 and str(parts[2]).isdigit() else ("", 0)
+        parts=(r["eth_date"] or "").split()
+        if len(parts)<3: continue
+        try: y=int(parts[2])
+        except ValueError: continue
+        key=(parts[0],y); v=months.setdefault(key,{"count":0,"income":0.0,"cut":0.0})
+        v["count"]+=1; v["income"]+=float(r["total_fee"] or 0); v["cut"]+=float(r["my_earning"] or 0)
+    parts=get_ethiopian_date().split()
+    current_key=(parts[0],int(parts[2])) if len(parts)>=3 and str(parts[2]).isdigit() else ("",0)
     if current_key[0]:
-        months.setdefault(current_key, {"count": 0, "income": 0.0, "cut": 0.0, "pct_sum": 0.0, "pct_count": 0})
-
-        current_month_index = ETH_MONTHS.index(current_key[0]) if current_key[0] in ETH_MONTHS else 0
-        if current_month_index == 0:
-            previous_key = (ETH_MONTHS[-1], current_key[1] - 1)
-        else:
-            previous_key = (ETH_MONTHS[current_month_index - 1], current_key[1])
-        months.setdefault(previous_key, {"count": 0, "income": 0.0, "cut": 0.0, "pct_sum": 0.0, "pct_count": 0})
-
-    def sort_key(item):
-        m, y = item[0]
-        try:
-            yi = int(y)
-        except ValueError:
-            yi = 0
-        try:
-            mi = ETH_MONTHS.index(m)
-        except ValueError:
-            mi = 99
-        return (yi, mi)
-
-    ordered = []
-    for (m, y), vals in sorted(months.items(), key=sort_key, reverse=True):
-        closure = closed_map.get((m, str(y)))
-        pct = (vals["cut"] / vals["income"] * 100.0) if vals["income"] else 0.0
-        ordered.append({
-            "label": f"{m} {y}",
-            "month": m,
-            "year": int(y) if str(y).isdigit() else 0,
-            "count": vals["count"],
-            "income": vals["income"],
-            "cut": vals["cut"],
-            "pct": pct,
-            "closed": bool(closure),
-            "closure": closure,
-            "is_current": (m, int(y) if str(y).isdigit() else 0) == current_key,
-        })
+        months.setdefault(current_key,{"count":0,"income":0.0,"cut":0.0})
+        idx=ETH_MONTHS.index(current_key[0])
+        prev=(ETH_MONTHS[-1],current_key[1]-1) if idx==0 else (ETH_MONTHS[idx-1],current_key[1])
+        months.setdefault(prev,{"count":0,"income":0.0,"cut":0.0})
+    ordered=[]
+    for (m,y),v in sorted(months.items(), key=lambda item:(item[0][1],ETH_MONTHS.index(item[0][0]) if item[0][0] in ETH_MONTHS else 99), reverse=True):
+        carry=0.0
+        if m==ETH_MONTHS[0]:
+            carry=months.get((ETH_MONTHS[-1],y-1),{}).get("cut",0.0)
+        closure=closed_map.get((m,y))
+        pagume_paid=bool(m==ETH_MONTHS[-1] and closed_map.get((ETH_MONTHS[0],y+1)))
+        ordered.append({"label":f"{m} {y}","month":m,"year":y,"count":v["count"],"income":v["income"],"cut":v["cut"],"pagume_carry":carry,"payable":v["cut"]+carry,"pct":(v["cut"]/v["income"]*100) if v["income"] else 0.0,"closed":bool(closure),"closure":closure,"pagume_paid":pagume_paid,"is_current":(m,y)==current_key})
     return render_template("monthly.html", months=ordered)
 
 
 @app.route("/monthly/pay", methods=["POST"])
 @login_required
 def monthly_pay():
-    doctor_id = session["doctor_id"]
-    month = (request.form.get("month") or "").strip()
-    year_text = (request.form.get("year") or "").strip()
-    try:
-        year = int(year_text)
-    except ValueError:
-        flash("Invalid Ethiopian month.", "error")
-        return redirect(url_for("monthly"))
-
-    if month not in ETH_MONTHS:
-        flash("Invalid Ethiopian month.", "error")
-        return redirect(url_for("monthly"))
-
-    current_parts = get_ethiopian_date().split()
-    current_key = (current_parts[0], int(current_parts[2])) if len(current_parts) >= 3 else ("", 0)
-    if (month, year) == current_key:
-        flash("The current Ethiopian month cannot be closed yet.", "error")
-        return redirect(url_for("monthly"))
-
+    doctor_id=session["doctor_id"]; month=(request.form.get("month") or "").strip()
+    try: year=int((request.form.get("year") or "").strip())
+    except ValueError: flash("Invalid Ethiopian month.","error"); return redirect(url_for("monthly"))
+    if month not in ETH_MONTHS: flash("Invalid Ethiopian month.","error"); return redirect(url_for("monthly"))
+    current_parts=get_ethiopian_date().split(); current_key=(current_parts[0],int(current_parts[2])) if len(current_parts)>=3 else ("",0)
+    if (month,year)==current_key: flash("The current Ethiopian month cannot be closed yet.","error"); return redirect(url_for("monthly"))
+    if month==ETH_MONTHS[-1]: flash("Pagume earnings are paid together with Meskerem of the following Ethiopian year.","info"); return redirect(url_for("monthly"))
     with get_conn() as conn:
-        rows = _execute(
-            conn,
-            "SELECT total_fee, my_earning FROM patients WHERE doctor_id=? AND eth_date LIKE ?",
-            (doctor_id, f"{month} % {year}"),
-        ).fetchall()
-        already = _execute(
-            conn,
-            "SELECT id FROM salary_closures WHERE doctor_id=? AND eth_month=? AND eth_year=?",
-            (doctor_id, month, year),
-        ).fetchone()
-
-        if already:
-            flash(f"{month} {year} is already paid and closed.", "info")
-            return redirect(url_for("monthly"))
-
-        earned = sum(float(r["my_earning"] or 0) for r in rows)
-        paid_date = datetime.now().strftime("%Y-%m-%d")
-        paid_eth_date = get_ethiopian_date(paid_date)
-        _execute(
-            conn,
-            """
-            INSERT INTO salary_closures
-            (doctor_id, eth_month, eth_year, earned_amount, paid_date, paid_eth_date, closed_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                doctor_id, month, year, earned, paid_date, paid_eth_date,
-                session.get("doctor_name", ""),
-            ),
-        )
-
-    log_audit(
-        doctor_id,
-        session.get("doctor_name", ""),
-        "salary_paid_closed",
-        detail=f"{month} {year} - {earned:,.2f} ETB",
-    )
-    flash(f"{month} {year} salary marked paid and the month is closed.", "success")
+        rows=_execute(conn,"SELECT my_earning FROM patients WHERE doctor_id=? AND eth_date LIKE ?",(doctor_id,f"{month} % {year}")).fetchall()
+        earned=sum(float(r["my_earning"] or 0) for r in rows); carry=0.0
+        if month==ETH_MONTHS[0]:
+            prev=_execute(conn,"SELECT my_earning FROM patients WHERE doctor_id=? AND eth_date LIKE ?",(doctor_id,f"{ETH_MONTHS[-1]} % {year-1}")).fetchall(); carry=sum(float(r["my_earning"] or 0) for r in prev)
+        if _execute(conn,"SELECT id FROM salary_closures WHERE doctor_id=? AND eth_month=? AND eth_year=?",(doctor_id,month,year)).fetchone():
+            flash(f"{month} {year} is already paid and closed.","info"); return redirect(url_for("monthly"))
+        total=earned+carry; paid_date=datetime.now().strftime("%Y-%m-%d"); paid_eth_date=get_ethiopian_date(paid_date)
+        _execute(conn,"INSERT INTO salary_closures (doctor_id, eth_month, eth_year, earned_amount, paid_date, paid_eth_date, closed_by) VALUES (?, ?, ?, ?, ?, ?, ?)",(doctor_id,month,year,total,paid_date,paid_eth_date,session.get("doctor_name","")))
+    detail=f"{month} {year} - {total:,.2f} ETB" + (f" (includes Pagume {year-1}: {carry:,.2f} ETB)" if carry else "")
+    log_audit(doctor_id,session.get("doctor_name",""),"salary_paid_closed",detail=detail)
+    flash(f"{month} {year} percentage earnings marked paid and the month is closed." + (f" Includes Pagume {year-1} earnings." if carry else ""),"success")
     return redirect(url_for("monthly"))
 
 
@@ -863,7 +771,7 @@ def doctors_manage():
                 from db import add_doctor
                 add_doctor(
                     request.form.get("name", ""),
-                    float(request.form.get("base_salary") or 45000),
+                    0,
                     request.form.get("username", ""),
                     request.form.get("password", ""),
                     int(request.form.get("birth_year") or 0),
@@ -882,7 +790,7 @@ def doctors_manage():
                 update_doctor_profile(
                     doctor_id,
                     name=name,
-                    base_salary=float(request.form.get("base_salary") or doc["base_salary"] or 45000),
+                    base_salary=0,
                     birth_year=int(request.form.get("birth_year") or 0),
                 )
                 set_doctor_email(doctor_id, request.form.get("email", ""))
@@ -1109,7 +1017,7 @@ def doctors_settings():
                 update_doctor_profile(
                     doctor_id,
                     name=request.form.get("name") or doc["name"],
-                    base_salary=float(request.form.get("base_salary") or 45000),
+                    base_salary=0,
                     birth_year=int(request.form.get("birth_year") or 0),
                 )
                 set_doctor_email(doctor_id, request.form.get("email", ""))
@@ -2692,6 +2600,7 @@ def backup_import_csv():
                 greg = pick("gregorian", "greg_date", "date") or datetime.now().strftime("%Y-%m-%d")
                 eth = pick("ethiopian", "eth_date") or get_ethiopian_date(greg)
                 patient = (pick("patient", "patient_name", "name") or "").strip().title()
+                card_number = (pick("card number", "card_number", "card") or "").strip().upper()
                 ticket = (pick("ticket", "ticket_no") or "").strip().upper()
                 procedure = (pick("procedure") or "").strip().title()
                 try:
@@ -2707,10 +2616,10 @@ def backup_import_csv():
                 cut = fee * (pct / 100.0)
                 _execute(conn,
                     """INSERT INTO patients
-                       (greg_date, eth_date, patient_name, ticket_no, procedure,
+                       (greg_date, eth_date, patient_name, card_number, ticket_no, procedure,
                         total_fee, doctor_pct, my_earning, doctor_id)
-                       VALUES (?,?,?,?,?,?,?,?,?)""",
-                    (greg, eth, patient, ticket, procedure, fee, pct, cut, doctor_id),
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (greg, eth, patient, card_number, ticket, procedure, fee, pct, cut, doctor_id),
                 )
                 n += 1
         log_audit(doctor_id, session.get("doctor_name", ""), "import", detail=f"{n} rows from CSV")
@@ -2724,65 +2633,26 @@ def backup_import_csv():
 @login_required
 def monthly_report_html():
     doctor_id = session["doctor_id"]
-    eth = get_ethiopian_date()
-    parts = eth.split()
-    m, y = (parts[0], parts[2]) if len(parts) >= 3 else ("", "")
+    eth = get_ethiopian_date(); parts = eth.split()
+    m, y = (parts[0], int(parts[2])) if len(parts) >= 3 and str(parts[2]).isdigit() else ("", 0)
     with get_conn() as conn:
-        rows = _execute(
-            conn,
-            "SELECT * FROM patients WHERE doctor_id=? ORDER BY id", (doctor_id,)
-        ).fetchall()
-        doc = _execute(
-            conn,
-            "SELECT name FROM doctors WHERE id=?", (doctor_id,)
-        ).fetchone()
-    month_rows = [
-        r for r in rows
-        if r["eth_date"] and m in r["eth_date"] and y in r["eth_date"]
-    ]
-    income = sum(float(r["total_fee"] or 0) for r in month_rows)
-    cut = sum(float(r["my_earning"] or 0) for r in month_rows)
-    # Effective monthly percentage: total doctor earnings divided by total fees.
-    # This remains correct even if different treatments use different percentages.
-    pct = (cut / income * 100.0) if income else 0.0
-
-    rows_html = "".join(
-        f"<tr><td>{r['eth_date']}</td><td>{r['patient_name']}</td>"
-        f"<td>{r['ticket_no'] or ''}</td><td>{r['procedure']}</td>"
-        f"<td>{float(r['total_fee'] or 0):,.2f}</td>"
-        f"<td>{float(r['doctor_pct'] or 0):,.2f}%</td>"
-        f"<td>{float(r['my_earning'] or 0):,.2f}</td></tr>"
-        for r in month_rows
-    )
-    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Monthly - {m} {y}</title>
-<style>
-body{{font-family:Segoe UI,sans-serif;background:#f1f1ef;padding:24px;color:#1a1a1a}}
-.card{{max-width:1000px;margin:auto;background:#fff;padding:28px;border-radius:14px;border:1px solid #e1e1df}}
-h1{{color:#55616c;border-bottom:3px solid #b98a3e;padding-bottom:12px}}
-.stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}}
-.stat{{background:#f7f7f5;border:1px solid #e1e1df;border-radius:10px;padding:12px}}
-.stat b{{display:block;font-size:1.15rem;margin-top:4px}}
-table{{width:100%;border-collapse:collapse;margin-top:12px}}
-th{{background:#55616c;color:#fff;text-align:left;padding:8px}}
-td{{padding:8px;border-bottom:1px solid #e1e1df}}
-.banner{{background:linear-gradient(135deg,#b98a3e,#9c7433);color:#fff;padding:16px;border-radius:12px;text-align:center;margin-top:16px}}
-@media print{{.noprint{{display:none}}}}
-@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}}}
-</style></head><body><div class="card">
-<h1>Dental {CLINIC_NAME}</h1>
-<p>Monthly report - {m} {y} - {doc['name'] if doc else ''}</p>
-<div class="stats">
-<div class="stat">Patients<b>{len(month_rows)}</b></div>
-<div class="stat">Income<b>{income:,.2f} ETB</b></div>
-<div class="stat">Doctor percentage<b>{pct:,.2f}%</b></div>
-<div class="stat">Doctor earnings<b>{cut:,.2f} ETB</b></div>
-</div>
-<table><thead><tr><th>Eth date</th><th>Patient</th><th>Ticket</th><th>Procedure</th><th>Fee</th><th>Percent</th><th>Doctor earning</th></tr></thead>
-<tbody>{rows_html or '<tr><td colspan="7">No records</td></tr>'}</tbody></table>
-<p class="noprint" style="text-align:center;margin-top:20px"><button onclick="window.print()">Print / Save PDF</button></p>
-</div></body></html>"""
-    return Response(html, mimetype="text/html")
+        rows = _execute(conn, "SELECT * FROM patients WHERE doctor_id=? ORDER BY id", (doctor_id,)).fetchall()
+        doc = _execute(conn, "SELECT name FROM doctors WHERE id=?", (doctor_id,)).fetchone()
+    month_rows=[r for r in rows if r["eth_date"] and m in r["eth_date"] and str(y) in r["eth_date"]]
+    income=sum(float(r["total_fee"] or 0) for r in month_rows); cut=sum(float(r["my_earning"] or 0) for r in month_rows)
+    pagume_carry=0.0
+    if m==ETH_MONTHS[0]:
+        pagume_carry=sum(float(r["my_earning"] or 0) for r in rows if r["eth_date"] and ETH_MONTHS[-1] in r["eth_date"] and str(y-1) in r["eth_date"])
+    payable=cut+pagume_carry; pct=(cut/income*100.0) if income else 0.0
+    rows_html="".join(f"<tr><td>{r['eth_date']}</td><td>{r['patient_name']}</td><td>{r['card_number'] or ''}</td><td>{r['ticket_no'] or ''}</td><td>{r['procedure']}</td><td>{float(r['total_fee'] or 0):,.2f}</td><td>{float(r['doctor_pct'] or 0):,.2f}%</td><td>{float(r['my_earning'] or 0):,.2f}</td></tr>" for r in month_rows)
+    html=f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Monthly - {m} {y}</title>
+<style>body{{font-family:Segoe UI,sans-serif;background:#f1f1ef;padding:24px;color:#1a1a1a}}.card{{max-width:1100px;margin:auto;background:#fff;padding:28px;border-radius:14px;border:1px solid #e1e1df}}h1{{color:#55616c;border-bottom:3px solid #b98a3e;padding-bottom:12px}}.stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}}.stat{{background:#f7f7f5;border:1px solid #e1e1df;border-radius:10px;padding:12px}}.stat b{{display:block;font-size:1.15rem;margin-top:4px}}table{{width:100%;border-collapse:collapse;margin-top:12px}}th{{background:#55616c;color:#fff;text-align:left;padding:8px}}td{{padding:8px;border-bottom:1px solid #e1e1df}}.banner{{background:linear-gradient(135deg,#b98a3e,#9c7433);color:#fff;padding:16px;border-radius:12px;text-align:center;margin-top:16px}}@media print{{.noprint{{display:none}}}}@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}}}</style></head><body><div class="card">
+<h1>Dental {CLINIC_NAME}</h1><p>Monthly report - {m} {y} - {doc['name'] if doc else ''}</p>
+<div class="stats"><div class="stat">Patients<b>{len(month_rows)}</b></div><div class="stat">Income<b>{income:,.2f} ETB</b></div><div class="stat">Doctor percentage<b>{pct:,.2f}%</b></div><div class="stat">Percentage earnings payable<b>{payable:,.2f} ETB</b></div></div>
+{f'<div class="banner">Includes Pagume {y-1} carryover: <strong>{pagume_carry:,.2f} ETB</strong></div>' if pagume_carry else ''}
+<table><thead><tr><th>Eth date</th><th>Patient</th><th>Card Number</th><th>Ticket</th><th>Procedure</th><th>Fee</th><th>Percent</th><th>Doctor earning</th></tr></thead><tbody>{rows_html or '<tr><td colspan="8">No records</td></tr>'}</tbody></table>
+<p class="noprint" style="text-align:center;margin-top:20px"><button onclick="window.print()">Print / Save PDF</button></p></div></body></html>"""
+    return Response(html,mimetype="text/html")
 
 
 @app.route("/audit")

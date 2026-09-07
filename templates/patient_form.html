@@ -24,6 +24,10 @@
       <input name="patient_name" required value="{{ record.patient_name if record else '' }}">
     </div>
     <div>
+      <label>Card Number</label>
+      <input name="card_number" required value="{{ record.card_number if record else '' }}" placeholder="Enter patient card number">
+    </div>
+    <div>
       <label>Ticket number</label>
       <input name="ticket_no" value="{{ record.ticket_no if record else '' }}">
     </div>

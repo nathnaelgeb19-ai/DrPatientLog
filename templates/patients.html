@@ -13,7 +13,7 @@
   <form class="filters" method="get">
     <div class="field grow">
       <label>Search</label>
-      <input name="q" value="{{ q }}" placeholder="Name, ticket, procedure">
+      <input name="q" value="{{ q }}" placeholder="Name, card number, ticket, procedure">
     </div>
     <div class="field">
       <label>From</label>
@@ -35,6 +35,7 @@
           <th>ID</th>
           <th>Eth date</th>
           <th>Patient</th>
+          <th>Card Number</th>
           <th>Ticket</th>
           <th>Procedure</th>
           <th>Fee</th>
@@ -48,6 +49,7 @@
           <td>{{ r.id }}</td>
           <td>{{ r.eth_date }}</td>
           <td><b>{{ r.patient_name }}</b></td>
+          <td>{{ r.card_number or '—' }}</td>
           <td>{{ r.ticket_no or '—' }}</td>
           <td>{{ r.procedure }}</td>
           <td>{{ "%.2f"|format(r.total_fee or 0) }} ETB</td>
@@ -61,7 +63,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="8" class="empty">No matching records</td></tr>
+        <tr><td colspan="9" class="empty">No matching records</td></tr>
         {% endfor %}
       </tbody>
     </table>

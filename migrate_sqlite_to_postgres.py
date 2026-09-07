@@ -16,7 +16,7 @@ TABLES = {
         "reset_token_hash", "reset_token_expires_at", "created_at"
     ],
     "patients": [
-        "id", "greg_date", "eth_date", "patient_name", "ticket_no",
+        "id", "greg_date", "eth_date", "patient_name", "card_number", "ticket_no",
         "procedure", "total_fee", "doctor_pct", "my_earning",
         "doctor_id", "created_at"
     ],
@@ -61,6 +61,7 @@ def create_schema(conn):
                 greg_date TEXT,
                 eth_date TEXT,
                 patient_name TEXT,
+                card_number TEXT DEFAULT '',
                 ticket_no TEXT,
                 procedure TEXT,
                 total_fee DOUBLE PRECISION,
