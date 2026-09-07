@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}History · {{ clinic_name }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <p class="kicker">Archive</p>
+    <h1>Patient history</h1>
+    <p class="lede">Search and filter recorded visits</p>
+  </div>
+</header>
+
+<section class="surface">
+  <form class="filters" method="get">
+    <div class="field grow">
+      <label>Search</label>
+      <input name="q" value="{{ q }}" placeholder="Name, card number, ticket, procedure">
+    </div>
+    <div class="field">
+      <label>From</label>
+      <input type="date" name="from" class="mobile-date" value="{{ date_from }}">
+    </div>
+    <div class="field">
+      <label>To</label>
+      <input type="date" name="to" class="mobile-date" value="{{ date_to }}">
+    </div>
+    <button class="btn btn-dark" type="submit">Filter</button>
+    <a class="btn btn-ghost" href="{{ url_for('patients_export_csv') }}">Export CSV</a>
+    <a class="btn btn-main" href="{{ url_for('patient_new') }}">+ New</a>
+  </form>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Eth date</th>
+          <th>Patient</th>
+          <th>Card Number</th>
+          <th>Ticket</th>
+          <th>Procedure</th>
+          <th>Fee</th>
+          <th>Cut</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in patients %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td>{{ r.eth_date }}</td>
+          <td><b>{{ r.patient_name }}</b></td>
+          <td>{{ r.card_number or '—' }}</td>
+          <td>{{ r.ticket_no or '—' }}</td>
+          <td>{{ r.procedure }}</td>
+          <td>{{ "%.2f"|format(r.total_fee or 0) }} ETB</td>
+          <td>{{ "%.2f"|format(r.my_earning or 0) }}</td>
+          <td class="row-actions">
+            <a class="btn btn-dark btn-xs" href="{{ url_for('patient_edit', pid=r.id) }}">Edit</a>
+            <a class="btn btn-ghost btn-xs" href="{{ url_for('patient_receipt', pid=r.id) }}" target="_blank">Receipt</a>
+            <form method="post" action="{{ url_for('patient_delete', pid=r.id) }}" onsubmit="return confirm('Delete?');">
+              <button class="btn btn-danger btn-xs" type="submit">Del</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="empty">No matching records</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

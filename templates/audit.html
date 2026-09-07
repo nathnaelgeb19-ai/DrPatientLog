@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Audit · {{ clinic_name }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <p class="kicker">Security</p>
+    <h1>Audit log</h1>
+    <p class="lede">Recent actions performed in the workspace</p>
+  </div>
+</header>
+
+<section class="surface">
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Doctor</th>
+          <th>Action</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.created_at }}</td>
+          <td>{{ r.doctor_name }}</td>
+          <td>{{ r.action }}</td>
+          <td>{{ r.detail }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="empty">No entries yet</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

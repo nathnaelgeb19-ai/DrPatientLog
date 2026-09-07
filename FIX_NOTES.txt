@@ -1,0 +1,20 @@
+DrPatientLog fixed build
+========================
+Primary production fix:
+- Removed psycopg_pool connection pooling from db.py.
+- PostgreSQL now uses short-lived psycopg connections with explicit close/rollback.
+- Added transient connection retry/backoff and TCP keepalive settings.
+- Removed psycopg-pool from requirements.txt.
+
+Reason:
+Render logs showed repeated psycopg_pool.PoolTimeout errors after 60 seconds
+during both /dashboard and /login. This means the application was blocked
+waiting for an exhausted application-side connection pool.
+
+Validation performed:
+- Python compileall over the project: PASS.
+- Project structure and Flask routes/templates/static files inspected.
+- No local database or OAuth credential files are included in this clean package.
+
+Note:
+The clean package does not include the local data/ directory or secrets.
