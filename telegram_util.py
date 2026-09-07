@@ -197,8 +197,7 @@ def build_daily_report(doctor_id, greg_date_str=None):
             t = f" · #{html_escape(str(r['ticket_no']))}" if r["ticket_no"] else ""
             report += (
                 f"\n{i}. <b>{html_escape(str(r['patient_name'] or '—'))}</b>"
-                f" · Card:
-<b>{html_escape(str(r['card_number'] or '—'))}</b>{t}"
+                f" · Card: <b>{html_escape(str(r['card_number'] or '—'))}</b>{t}"
                 f"\n   {html_escape(str(r['procedure'] or '—'))}"
                 f" · {float(r['total_fee'] or 0):,.2f} Birr"
             )
@@ -216,8 +215,7 @@ def build_monthly_report(doctor_id, eth_date_str=None):
     month_label = f'{eth_m} {eth_y}'
     with get_conn() as conn:
         rows = _execute(conn,'SELECT patient_name, card_number, ticket_no, procedure, eth_date, total_fee, my_earning FROM patients WHERE doctor_id=? ORDER BY id', (doctor_id,)).fetchall()
-        doc = _execute(conn,'SELECT base_salary FROM
-doctors WHERE id=?', (doctor_id,)).fetchone()
+        doc = _execute(conn, 'SELECT base_salary FROM doctors WHERE id=?', (doctor_id,)).fetchone()
     month_rows = [r for r in rows if r['eth_date'] and eth_m in r['eth_date'] and eth_y in r['eth_date']]
     income = sum(float(r['total_fee'] or 0) for r in month_rows)
     cut = sum(float(r['my_earning'] or 0) for r in month_rows)
